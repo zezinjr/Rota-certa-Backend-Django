@@ -1,0 +1,175 @@
+[
+{
+  "model": "core.company",
+  "pk": 1,
+  "fields": {
+    "created_at": "2026-03-31T04:55:46.748Z",
+    "updated_at": "2026-03-31T04:55:46.752Z",
+    "is_active": true,
+    "name": "SAMSUNG",
+    "email_domain": ""
+  }
+},
+{
+  "model": "core.company",
+  "pk": 7,
+  "fields": {
+    "created_at": "2026-04-01T12:27:32.653Z",
+    "updated_at": "2026-04-01T12:27:32.656Z",
+    "is_active": true,
+    "name": "Panasonic",
+    "email_domain": ""
+  }
+},
+{
+  "model": "core.company",
+  "pk": 8,
+  "fields": {
+    "created_at": "2026-05-16T08:45:05.650Z",
+    "updated_at": "2026-05-16T08:45:05.652Z",
+    "is_active": true,
+    "name": "Coca-Cola",
+    "email_domain": ""
+  }
+},
+{
+  "model": "core.person",
+  "pk": 1,
+  "fields": {
+    "created_at": "2026-04-01T12:39:07.223Z",
+    "updated_at": "2026-04-01T12:39:07.236Z",
+    "is_active": true,
+    "company": 7,
+    "name": "José Eduardo",
+    "phone": "92993971424",
+    "type": "EMPLOYEE",
+    "license_number": null,
+    "employee_code": "12240841648"
+  }
+},
+{
+  "model": "core.person",
+  "pk": 2,
+  "fields": {
+    "created_at": "2026-04-01T12:41:25.968Z",
+    "updated_at": "2026-05-14T14:51:07.667Z",
+    "is_active": true,
+    "company": 1,
+    "name": "Raybrendo Cruz Trindade",
+    "phone": "914864546842864",
+    "type": "DRIVER",
+    "license_number": "42554865046534",
+    "employee_code": null
+  }
+},
+{
+  "model": "core.person",
+  "pk": 3,
+  "fields": {
+    "created_at": "2026-05-14T14:48:05.676Z",
+    "updated_at": "2026-05-14T14:48:06.203Z",
+    "is_active": true,
+    "company": 1,
+    "name": "João Pedro",
+    "phone": "92985945515",
+    "type": "EMPLOYEE",
+    "license_number": null,
+    "employee_code": "203565"
+  }
+},
+{
+  "model": "core.person",
+  "pk": 4,
+  "fields": {
+    "created_at": "2026-05-16T07:25:01.706Z",
+    "updated_at": "2026-05-16T07:25:02.891Z",
+    "is_active": true,
+    "company": 1,
+    "name": "Beatriz Azevedo Neves",
+    "phone": "92992281234",
+    "type": "EMPLOYEE",
+    "license_number": null,
+    "employee_code": "101010"
+  }
+},
+{
+  "model": "core.accessaccount",
+  "pk": 1,
+  "fields": {
+    "created_at": "2026-05-09T05:35:08.087Z",
+    "updated_at": "2026-05-16T08:07:02.830Z",
+    "is_active": true,
+    "person": 1,
+    "email": "12240841648@panasonic.com",
+    "password_hash": "pbkdf2_sha256$1000000$d02nI2SP3J9xLqwjLpMU3A$58aH6onT6Z2yXE3EZ8vEbedGRyLXxk2mux4/qVBDmig=",
+    "must_change_password": false,
+    "failed_login_attempts": 0,
+    "last_login": "2026-05-16T08:07:00.388Z",
+    "blocked_until": null,
+    "password_reset_code_hash": "pbkdf2_sha256$1000000$VSeeSAP7P4bYQT5qEvMwfN$miW24hbjgPCY+IsYulQBW8+8jXosBY8CrepvkB7gfQ8=",
+    "password_reset_expires_at": "2026-05-14T03:46:56.256Z",
+    "password_reset_requested_at": "2026-05-14T03:31:57.124Z",
+    "password_reset_code_used": false
+  }
+},
+{
+  "model": "core.accessaccount",
+  "pk": 2,
+  "fields": {
+    "created_at": "2026-05-11T20:37:41.172Z",
+    "updated_at": "2026-05-17T03:33:31.112Z",
+    "is_active": true,
+    "person": 2,
+    "email": "42554865046534@samsung.com",
+    "password_hash": "pbkdf2_sha256$1000000$tW7A0NWlwwLsbpqEH0vfkN$ugVIhkVElIcDsryrPGXVsMkoKsvUA+uaDlvKJTj+weU=",
+    "must_change_password": false,
+    "failed_login_attempts": 0,
+    "last_login": "2026-05-17T03:33:30.182Z",
+    "blocked_until": null,
+    "password_reset_code_hash": "",
+    "password_reset_expires_at": null,
+    "password_reset_requested_at": null,
+    "password_reset_code_used": true
+  }
+},
+{
+  "model": "core.accessaccount",
+  "pk": 3,
+  "fields": {
+    "created_at": "2026-05-14T14:48:05.699Z",
+    "updated_at": "2026-05-14T14:48:06.195Z",
+    "is_active": true,
+    "person": 3,
+    "email": "203565@samsung.com",
+    "password_hash": "pbkdf2_sha256$1000000$oQUQdS8J1ZSn8A9WFgaLQ1$dhFgJ2DiF/O1sgdv1Axag7Nu6acmW+on/T9JqSxl3F0=",
+    "must_change_password": true,
+    "failed_login_attempts": 0,
+    "last_login": null,
+    "blocked_until": null,
+    "password_reset_code_hash": "",
+    "password_reset_expires_at": null,
+    "password_reset_requested_at": null,
+    "password_reset_code_used": true
+  }
+},
+{
+  "model": "core.accessaccount",
+  "pk": 4,
+  "fields": {
+    "created_at": "2026-05-16T07:25:01.743Z",
+    "updated_at": "2026-05-16T08:11:05.156Z",
+    "is_active": true,
+    "person": 4,
+    "email": "101010@samsung.com",
+    "password_hash": "pbkdf2_sha256$1000000$M7r7LB0kRekKbKYLbfLDk4$1hr+bS0hTvUGygG+wuevxSfEoofxJFC5TFC2T4+WMTY=",
+    "must_change_password": true,
+    "failed_login_attempts": 0,
+    "last_login": "2026-05-16T08:10:56.007Z",
+    "blocked_until": null,
+    "password_reset_code_hash": "",
+    "password_reset_expires_at": null,
+    "password_reset_requested_at": null,
+    "password_reset_code_used": true
+  }
+}
+]
