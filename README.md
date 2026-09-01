@@ -1222,11 +1222,12 @@ Novas funcionalidades e melhorias podem ser adicionadas conforme a evolução do
 
 # 👨‍💻 Autor
 
-Desenvolvido por **Raybrendo Trindade**.
+Desenvolvido por **Raybrendo Trindade** e **Jose Eduardo**.
 
 GitHub:
 
 https://github.com/RaybrendoT
+https://github.com/zezinjr
 
 Repositório:
 
