@@ -11,6 +11,12 @@ from .auth_views import (
     PasswordResetRequestView,
     PasswordResetVerifyView,
 )
+from .employee_views import (
+    EmployeeBoardingView,
+    EmployeeProfileView,
+    EmployeeTripDetailView,
+    EmployeeTripsView,
+)
 from .viewsets import (
     CompanyViewSet,
     PersonViewSet,
@@ -63,6 +69,14 @@ urlpatterns = [
         "auth/password-reset/reset/",
         PasswordResetCompleteView.as_view(),
         name="auth-password-reset-reset",
+    ),
+    path("me/", EmployeeProfileView.as_view(), name="me-profile"),
+    path("me/trips/", EmployeeTripsView.as_view(), name="me-trips"),
+    path("me/trips/<int:pk>/", EmployeeTripDetailView.as_view(), name="me-trip-detail"),
+    path(
+        "me/trips/<int:pk>/boarding/",
+        EmployeeBoardingView.as_view(),
+        name="me-trip-boarding",
     ),
     path("", include(router.urls)),
 ]
