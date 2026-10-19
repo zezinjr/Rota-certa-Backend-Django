@@ -1054,6 +1054,18 @@ Ou, caso sejam utilizados testes específicos:
 python manage.py test core
 ```
 
+## Integração contínua (GitHub Actions)
+
+O workflow [`.github/workflows/tests.yml`](.github/workflows/tests.yml) roda a cada push na `main`
+e em todo pull request (também pode ser disparado manualmente em **Actions → Testes do backend → Run workflow**):
+
+1. `python manage.py check` — configuração do Django;
+2. `python manage.py makemigrations --check --dry-run` — falha se um model mudou sem migração;
+3. `python manage.py test` — testes automatizados;
+4. `migrate` + `seed_manaus_demo` — garante que o seed de demonstração continua funcionando.
+
+O CI usa SQLite e não precisa de `.env`.
+
 ---
 
 # 🔍 Testando com Postman
