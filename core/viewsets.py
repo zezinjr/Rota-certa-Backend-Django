@@ -8,6 +8,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
@@ -39,7 +40,7 @@ from .serializers import (
     VehicleSerializer,
 )
 from .driver_serializers import DriverRouteBoardSerializer
-from .permissions import IsDriver
+from .permissions import IsDriver, IsManagerOrDriver
 from .filters import (
     CompanyFilter,
     PersonFilter,
@@ -308,10 +309,44 @@ class EmployeeViewSet(BaseViewSet):
     filterset_class = EmployeeFilter
 
 
-class RoutePassengerViewSet(BaseViewSet):
+class DriverScopedMixin:
+    """
+    Gestores têm acesso total (permissão padrão). Motoristas podem usar apenas
+    `driver_actions`, e só sobre registros das rotas em que dirigem o veículo.
+    """
+
+    driver_actions: set = set()
+
+    def _driver(self):
+        person = getattr(self.request.user, "person", None)
+        if person is not None and person.type == Person.PersonType.DRIVER:
+            return person
+        return None
+
+    def get_permissions(self):
+        if self.action in self.driver_actions:
+            return [IsAuthenticated(), IsManagerOrDriver()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        driver = self._driver()
+        if driver is not None:
+            qs = qs.filter(route__vehicle__driver=driver)
+        return qs
+
+
+class RoutePassengerViewSet(DriverScopedMixin, BaseViewSet):
     queryset = RoutePassenger.objects.select_related("person", "route", "route_stop")
     serializer_class = RoutePassengerSerializer
     filterset_class = RoutePassengerFilter
+    # Motorista: consultar passageiros e marcar embarque (somente boarding_status).
+    driver_actions = {"list", "retrieve", "partial_update"}
+
+    def partial_update(self, request, *args, **kwargs):
+        if self._driver() is not None and set(request.data) - {"boarding_status"}:
+            raise PermissionDenied("Motoristas só podem alterar o boarding_status.")
+        return super().partial_update(request, *args, **kwargs)
 
 
 class RouteStopViewSet(BaseViewSet):
@@ -320,9 +355,19 @@ class RouteStopViewSet(BaseViewSet):
     filterset_class = RouteStopFilter
 
 
-class RouteEventViewSet(BaseViewSet):
+class RouteEventViewSet(DriverScopedMixin, BaseViewSet):
     queryset = RouteEvent.objects.select_related("route")
     serializer_class = RouteEventSerializer
+    # Motorista: registrar saída/parada/atraso/chegada das próprias rotas
+    # (é o que atualiza o status visto no app do colaborador).
+    driver_actions = {"list", "retrieve", "create"}
+
+    def perform_create(self, serializer):
+        driver = self._driver()
+        route = serializer.validated_data["route"]
+        if driver is not None and (route.vehicle is None or route.vehicle.driver_id != driver.id):
+            raise PermissionDenied("O motorista só pode registrar eventos das próprias rotas.")
+        serializer.save()
 
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_class = RouteEventFilter

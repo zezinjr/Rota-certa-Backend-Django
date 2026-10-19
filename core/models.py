@@ -82,6 +82,7 @@ class Person(BaseModel):
     class PersonType(models.TextChoices):
         DRIVER = "DRIVER", "Driver"
         EMPLOYEE = "EMPLOYEE", "Employee"
+        MANAGER = "MANAGER", "Manager"  # gestor: usuário do painel web
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="people")
     name = models.CharField(max_length=255)
@@ -94,7 +95,7 @@ class Person(BaseModel):
     )
 
     license_number = models.CharField(max_length=100, null=True, blank=True)   # só driver
-    employee_code = models.CharField(max_length=100, null=True, blank=True)    # só employee
+    employee_code = models.CharField(max_length=100, null=True, blank=True)    # employee e manager
 
     def clean(self):
         if self.type == self.PersonType.DRIVER:
@@ -109,12 +110,18 @@ class Person(BaseModel):
             if self.license_number:
                 raise ValidationError({"license_number": "Employee não pode ter license_number."})
 
+        if self.type == self.PersonType.MANAGER:
+            if not self.employee_code:
+                raise ValidationError({"employee_code": "Manager precisa de employee_code."})
+            if self.license_number:
+                raise ValidationError({"license_number": "Manager não pode ter license_number."})
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
     def get_auto_email_local_part(self):
-        if self.type == self.PersonType.EMPLOYEE:
+        if self.type in (self.PersonType.EMPLOYEE, self.PersonType.MANAGER):
             raw = self.employee_code
         else:
             raw = self.license_number

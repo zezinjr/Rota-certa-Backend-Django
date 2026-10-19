@@ -186,6 +186,7 @@ class Command(BaseCommand):
         employee_total = people_total - driver_total
 
         companies = self.create_companies()
+        managers = self.create_managers(companies)
         self.create_schedules(companies)
         meeting_points = self.create_meeting_points(companies)
         drivers = self.create_people(companies, driver_total, Person.PersonType.DRIVER)
@@ -207,6 +208,9 @@ class Command(BaseCommand):
                 f"{RoutePassenger.objects.count()} passageiros de rota."
             )
         )
+        self.stdout.write("Gestores (login do painel web):")
+        for manager in managers:
+            self.stdout.write(f"  {manager.get_auto_email()}  ({manager.company.name})")
 
     def create_companies(self):
         companies = []
@@ -228,6 +232,24 @@ class Command(BaseCommand):
             )
             companies.append(company)
         return companies
+
+    def create_managers(self, companies):
+        """Um gestor por empresa (GST001, GST002...), usado para entrar no painel web."""
+        managers = []
+        for index, company in enumerate(companies):
+            manager, _ = Person.objects.update_or_create(
+                company=company,
+                employee_code=f"GST{index + 1:03d}",
+                defaults={
+                    "name": f"Gestor {company.name}",
+                    "phone": f"+5592970000{index:03d}",
+                    "type": Person.PersonType.MANAGER,
+                    "license_number": None,
+                    "is_active": True,
+                },
+            )
+            managers.append(manager)
+        return managers
 
     def create_schedules(self, companies):
         for company in companies:
