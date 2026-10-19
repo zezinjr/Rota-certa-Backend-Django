@@ -933,6 +933,19 @@ POST /schedules/
 
 ---
 
+## App do colaborador (`/api/me/`)
+
+Endpoints consumidos pelo app Android dos colaboradores. Exigem `Authorization: Bearer <access_token>` de uma pessoa do tipo `EMPLOYEE` (motoristas recebem 403).
+
+| Método | Endpoint | Descrição |
+|---|---|---|
+| GET | `/api/me/` | Perfil do colaborador logado (matrícula, e-mail, empresa, endereço) |
+| GET | `/api/me/trips/` | Rotas em que o colaborador é passageiro: status da rota, veículo, motorista, meu ponto, paradas, destino, horários e últimos eventos |
+| GET | `/api/me/trips/{id}/` | Detalhe de uma viagem (id do `RoutePassenger`) |
+| POST | `/api/me/trips/{id}/boarding/` | Confirma ou informa ausência: `{"status": "confirmed" \| "absent" \| "pending"}` |
+
+O colaborador só enxerga e altera os próprios registros (404 para os de outras pessoas).
+
 # 🧪 Exemplos de utilização
 
 ## Criando um funcionário
