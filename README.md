@@ -832,6 +832,30 @@ Nas requisições protegidas, o token deve ser enviado no header:
 Authorization: Bearer <access_token>
 ```
 
+## Quem pode acessar o quê
+
+**Toda a API exige login.** Sem token, a resposta é `401`. O perfil da pessoa logada define o acesso:
+
+| Perfil (`Person.type`) | Acesso |
+|---|---|
+| `MANAGER` (gestor, painel web) | Todos os endpoints de cadastro (empresas, pessoas, veículos, rotas, horários, eventos...) |
+| `DRIVER` (motorista) | `routes/my-routes/`, `routes/{id}/driver-detail/`, `routes/{id}/navigation/`; eventos (`route-events`: listar e criar) e passageiros (`route-passengers`: listar e alterar só o `boarding_status`), **apenas das próprias rotas** |
+| `EMPLOYEE` (colaborador) | Apenas `/api/me/...` (perfil, viagens e confirmação de embarque) |
+
+Os endpoints `/api/auth/` (login, refresh, verify e recuperação de senha) continuam públicos. Outros acessos retornam `403`.
+
+### Gestores
+
+O gestor é uma `Person` do tipo `MANAGER`, com `employee_code`. A conta de acesso é criada automaticamente, com e-mail `codigo@dominio-da-empresa`.
+
+- **Primeiro gestor** de um banco novo:
+  ```bash
+  python manage.py create_manager --company-id 1 --name "Maria Gestora" --code GST001 --phone "+5592999990000" --password "SenhaInicial@1"
+  ```
+  O gestor troca a senha no primeiro acesso.
+- Depois disso, novos gestores podem ser cadastrados por um gestor via `POST /api/people/` com `"type": "MANAGER"`.
+- O seed `seed_manaus_demo` cria um gestor por empresa (`gst001@polodigitalmanaus.com` ... `gst005@pontanegraservicos.com`).
+
 ---
 
 # 🔌 Endpoints

@@ -142,6 +142,13 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "core.authentication.AccessAccountJWTAuthentication",
     ],
+    # Toda a API exige login de gestor por padrão. Endpoints de login/senha
+    # (AllowAny), do motorista (IsDriver) e do colaborador (IsEmployee)
+    # declaram as próprias permissões.
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+        "core.permissions.IsManager",
+    ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
