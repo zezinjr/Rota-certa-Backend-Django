@@ -970,6 +970,28 @@ Endpoints consumidos pelo app Android dos colaboradores. Exigem `Authorization: 
 
 O colaborador só enxerga e altera os próprios registros (404 para os de outras pessoas).
 
+## Acompanhamento ao vivo da van
+
+| Método | Endpoint | Quem | Descrição |
+|---|---|---|---|
+| POST | `/api/routes/{id}/location/` | Motorista (só as próprias rotas) | Envia o GPS: `{"latitude", "longitude", "heading"?, "speed"? (m/s), "recorded_at"?}` a cada 3–5 s durante a rota |
+| GET | `/api/me/trips/{id}/live/` | Colaborador (só as próprias viagens) | Posição da van, `is_live`, `phase` (`waiting`, `approaching`, `arriving`, `passed`, `at_destination`), `eta` (`minutes`, `distance_meters`, `stops_before`), `next_stop_sequence` e `path_progress` |
+
+- A última posição de cada veículo fica em `VehicleLocation`. Posições com mais de 2 min deixam de contar como "ao vivo".
+- A previsão é calculada pela distância ao longo das paradas até o ponto do colaborador, usando a velocidade média (25 km/h, ou a velocidade informada pela van quando maior) mais 1 min por parada antes da sua. Não usa API paga.
+- Os parâmetros ficam em `config/settings.py` (`LIVE_*`). Esses dois endpoints têm limite próprio de requisições (`driver_location` e `trip_live`), separado do limite geral.
+
+### Simulador (sem o app do motorista)
+
+```bash
+# Faz a van da rota do colaborador percorrer todas as paradas em ~5 minutos
+python manage.py simular_rota --email mne001@polodigitalmanaus.com
+
+# Outras opções: --route-id 3 · --minutos 10 · --speed-kmh 30 (ritmo real) · --loop · --start-meters 2000
+```
+
+O simulador grava a posição a cada 3 s, registra os eventos de saída e chegada, e para com Ctrl+C. Rode em um terminal separado, com o `runserver` aberto, e acompanhe no app.
+
 # 🧪 Exemplos de utilização
 
 ## Criando um funcionário
