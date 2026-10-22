@@ -15,6 +15,7 @@ from .employee_views import (
     EmployeeBoardingView,
     EmployeeProfileView,
     EmployeeTripDetailView,
+    EmployeeTripLiveView,
     EmployeeTripsView,
 )
 from .viewsets import (
@@ -73,6 +74,7 @@ urlpatterns = [
     path("me/", EmployeeProfileView.as_view(), name="me-profile"),
     path("me/trips/", EmployeeTripsView.as_view(), name="me-trips"),
     path("me/trips/<int:pk>/", EmployeeTripDetailView.as_view(), name="me-trip-detail"),
+    path("me/trips/<int:pk>/live/", EmployeeTripLiveView.as_view(), name="me-trip-live"),
     path(
         "me/trips/<int:pk>/boarding/",
         EmployeeBoardingView.as_view(),

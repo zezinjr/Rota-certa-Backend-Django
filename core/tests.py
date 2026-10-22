@@ -196,3 +196,156 @@ class ApiAccessControlTests(TestCase):
         from django.core.exceptions import ValidationError
         with self.assertRaises(ValidationError):
             Person.objects.create(company=self.company, name="Sem código", phone="1", type="MANAGER")
+
+
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD)
+class LiveTrackingTests(TestCase):
+    """
+    Rota reta no sentido leste-oeste: paradas a cada 0,01° de longitude (~1,1 km)
+    e a empresa no fim. O colaborador embarca na 3ª parada (sequence 2).
+    """
+
+    LAT = Decimal("-3.100000")
+
+    def lng(self, value):
+        return Decimal(str(value))
+
+    def setUp(self):
+        from .models import VehicleLocation  # noqa: F401  (garante o model carregado)
+
+        self.client = APIClient()
+        self.company = Company.objects.create(name="Acme", email_domain="acme.com")
+        Address.objects.create(  # empresa (destino)
+            company=self.company, street="Empresa", number="1", city="Manaus", state="AM",
+            zip_code="69000-000", latitude=self.LAT, longitude=self.lng(-60.04),
+        )
+        self.driver = Person.objects.create(
+            company=self.company, name="Motorista", phone="9201", type="DRIVER", license_number="CNH1",
+        )
+        other_driver = Person.objects.create(
+            company=self.company, name="Outro", phone="9202", type="DRIVER", license_number="CNH2",
+        )
+        self.employee = Person.objects.create(
+            company=self.company, name="Colab", phone="9203", type="EMPLOYEE", employee_code="E1",
+        )
+        other_employee = Person.objects.create(
+            company=self.company, name="Colab 2", phone="9204", type="EMPLOYEE", employee_code="E2",
+        )
+        self.vehicle = Vehicle.objects.create(company=self.company, driver=self.driver, plate_number="AAA1", model="Van", capacity=15)
+        other_vehicle = Vehicle.objects.create(company=self.company, driver=other_driver, plate_number="BBB2", model="Van", capacity=15)
+        self.route = Route.objects.create(company=self.company, name="Rota reta", vehicle=self.vehicle)
+        self.other_route = Route.objects.create(company=self.company, name="Outra", vehicle=other_vehicle)
+        stops = []
+        for seq, lng in enumerate([-60.00, -60.01, -60.02, -60.03]):
+            addr = Address.objects.create(
+                company=self.company, street=f"Ponto {seq}", number="1", city="Manaus", state="AM",
+                zip_code="69000-001", latitude=self.LAT, longitude=self.lng(lng),
+            )
+            point = MeetingPoint.objects.create(company=self.company, name=f"Ponto {seq}", address=addr)
+            stops.append(RouteStop.objects.create(route=self.route, meeting_point=point, sequence=seq))
+        self.trip = RoutePassenger.objects.create(person=self.employee, route=self.route, route_stop=stops[2])
+        self.other_trip = RoutePassenger.objects.create(person=other_employee, route=self.other_route)
+
+    def login(self, email):
+        self.client.credentials()
+        res = self.client.post("/api/auth/login/", {"email": email, "password": PASSWORD}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access_token']}")
+
+    def send(self, lng, **extra):
+        return self.client.post(
+            f"/api/routes/{self.route.id}/location/",
+            {"latitude": str(self.LAT), "longitude": str(lng), **extra},
+            format="json",
+        )
+
+    def live(self):
+        self.login("e1@acme.com")
+        res = self.client.get(f"/api/me/trips/{self.trip.id}/live/")
+        self.assertEqual(res.status_code, 200)
+        return res.data
+
+    # --- envio do GPS pelo motorista
+
+    def test_driver_sends_location_for_own_route(self):
+        self.login("cnh1@acme.com")
+        res = self.send(-60.005, heading=270, speed=8.5)
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertAlmostEqual(res.data["progress_meters"], 555, delta=10)
+        self.assertEqual(self.vehicle.location.route_id, self.route.id)
+
+    def test_driver_cannot_send_location_for_other_route(self):
+        self.login("cnh1@acme.com")
+        res = self.client.post(f"/api/routes/{self.other_route.id}/location/", {"latitude": "-3.1", "longitude": "-60"}, format="json")
+        self.assertEqual(res.status_code, 404)
+
+    def test_location_validation_and_permissions(self):
+        self.login("cnh1@acme.com")
+        self.assertEqual(self.send(-60.0, heading=400).status_code, 400)
+        self.login("e1@acme.com")
+        self.assertEqual(self.send(-60.0).status_code, 403)
+
+    # --- situação ao vivo para o colaborador
+
+    def test_waiting_without_location(self):
+        data = self.live()
+        self.assertFalse(data["is_live"])
+        self.assertEqual(data["phase"], "waiting")
+        self.assertIsNone(data["vehicle"])
+
+    def test_approaching_with_eta_and_stops_before(self):
+        self.login("cnh1@acme.com")
+        self.send(-60.005)  # meio do caminho entre a 1ª e a 2ª parada
+        data = self.live()
+        self.assertTrue(data["is_live"])
+        self.assertEqual(data["phase"], "approaching")
+        self.assertEqual(data["next_stop_sequence"], 1)
+        self.assertEqual(data["eta"]["stops_before"], 1)
+        self.assertAlmostEqual(data["eta"]["distance_meters"], 1665, delta=15)
+        # 1665 m a 25 km/h (~240 s) + 60 s na parada anterior = ~5 min
+        self.assertEqual(data["eta"]["minutes"], 5)
+        self.assertEqual(data["path_progress"]["segment"], 0)
+
+    def test_phases_along_the_route(self):
+        self.login("cnh1@acme.com")
+        expected = [(-60.019, "arriving"), (-60.025, "passed"), (-60.0395, "at_destination")]
+        for lng, phase in expected:
+            self.send(lng)
+            self.assertEqual(self.live()["phase"], phase, lng)
+            self.login("cnh1@acme.com")
+
+    def test_stale_location_is_not_live(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from .live import save_vehicle_location
+
+        save_vehicle_location(self.vehicle, self.route, self.LAT, -60.005, recorded_at=timezone.now() - timedelta(minutes=10))
+        data = self.live()
+        self.assertFalse(data["is_live"])
+        self.assertIsNotNone(data["vehicle"])
+        self.assertIsNone(data["eta"])
+
+    def test_cannot_see_other_passenger_live(self):
+        self.login("e1@acme.com")
+        self.assertEqual(self.client.get(f"/api/me/trips/{self.other_trip.id}/live/").status_code, 404)
+
+    def test_trip_payload_uses_latest_gps_position(self):
+        self.login("cnh1@acme.com")
+        self.send(-60.005)
+        self.login("e1@acme.com")
+        trip = self.client.get("/api/me/trips/").data[0]
+        self.assertAlmostEqual(float(trip["last_position"]["longitude"]), -60.005, places=5)
+
+    # --- trajeto que se cruza
+
+    def test_progress_keeps_continuity_on_crossing_paths(self):
+        from .live import PathPoint, cumulative_distances, locate_on_path
+
+        # A→B vai para o leste; C→D desce e cruza A→B no meio.
+        path = [PathPoint(0, 0), PathPoint(0, 0.02), PathPoint(0.01, 0.01), PathPoint(-0.01, 0.01)]
+        cum = cumulative_distances(path)
+        crossing = (0.0, 0.01)
+        first_pass = locate_on_path(crossing, path, cum, previous_along=cum[0] + 900)
+        second_pass = locate_on_path(crossing, path, cum, previous_along=cum[2] + 900)
+        self.assertLess(first_pass, cum[1])   # ainda no 1º trecho
+        self.assertGreater(second_pass, cum[2])  # já no trecho que cruza

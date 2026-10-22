@@ -162,7 +162,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/hour',
-        'user': '1000/hour'
+        'user': '1000/hour',
+        # Rastreamento ao vivo: o motorista envia o GPS e o colaborador consulta
+        # a cada poucos segundos, por isso têm limites próprios.
+        'driver_location': '3600/hour',
+        'trip_live': '3600/hour',
     }
 }
 
@@ -216,6 +220,13 @@ PASSWORD_RESET_FORCE_MUST_CHANGE_PASSWORD = config(
     default=False,
     cast=bool,
 )
+
+# Acompanhamento ao vivo (core/live.py)
+LIVE_LOCATION_MAX_AGE_SECONDS = 120   # posição mais antiga que isso não conta como "ao vivo"
+LIVE_AVERAGE_SPEED_KMH = 25           # velocidade média usada na previsão de chegada
+LIVE_STOP_DWELL_SECONDS = 60          # tempo parado em cada parada antes da sua
+LIVE_ARRIVING_METERS = 300            # "chegando" quando a van está a essa distância do ponto
+LIVE_DESTINATION_METERS = 150         # "chegou" quando está a essa distância da empresa
 
 GOOGLE_MAPS_API_KEY = config("GOOGLE_MAPS_API_KEY", default="")
 GOOGLE_ROUTES_API_URL = config(

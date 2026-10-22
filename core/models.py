@@ -413,3 +413,38 @@ class Vehicle(BaseModel):
 
     def __str__(self):
         return self.plate_number
+
+class VehicleLocation(models.Model):
+    """
+    Última posição conhecida do veículo (uma linha por veículo, sobrescrita a cada envio).
+    Enviada pelo app do motorista ou pelo comando `simular_rota`.
+    """
+
+    vehicle = models.OneToOneField(
+        Vehicle,
+        on_delete=models.CASCADE,
+        related_name="location",
+    )
+    route = models.ForeignKey(
+        Route,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="vehicle_locations",
+        help_text="Rota que o veículo está fazendo quando enviou a posição.",
+    )
+    latitude = models.DecimalField(max_digits=9, decimal_places=6)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6)
+    heading = models.FloatField(null=True, blank=True, help_text="Direção em graus (0 = norte).")
+    speed = models.FloatField(null=True, blank=True, help_text="Velocidade em m/s.")
+    progress_meters = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Distância percorrida no trajeto da rota (paradas → empresa). "
+        "Usada para não confundir trechos quando o trajeto se cruza.",
+    )
+    recorded_at = models.DateTimeField(help_text="Momento da leitura do GPS.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.vehicle} @ {self.latitude},{self.longitude}"
