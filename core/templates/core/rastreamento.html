@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1e40af">
+  <title>Rotacerta · Rastreamento do motorista</title>
+  <style>
+    /* Mesmas cores do painel (app-menu.component.scss) */
+    :root {
+      --topbar: #1e40af; --accent: #3b82f6; --bg: #0f172a; --panel: #1e2937; --divider: #334155;
+      --text-strong: #f1f5f9; --text: #e2e8f0; --text-label: #94a3b8; --text-muted: #64748b;
+      --success-bg: #166534; --success: #4ade80; --warning-bg: #854d0e; --warning: #facc15;
+      --primary: #3f51b5; --warn: #f44336;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
+    .topbar { background: var(--topbar); height: 56px; display: flex; align-items: center; padding: 0 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,.2); gap: 8px; font-weight: 600; font-size: 1.15rem; color: #fff; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+    main { max-width: 480px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    h1 { font-size: 1.5rem; margin: 8px 0 0; color: var(--text-strong); }
+    .sub { color: var(--text-muted); margin: 4px 0 0; font-size: .95rem; }
+    .panel { background: var(--panel); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .panel h2 { margin: 0; font-size: 1.05rem; color: var(--text); }
+    .notice { border-radius: 12px; padding: 14px 16px; font-size: .92rem; line-height: 1.4; }
+    .notice.warning { background: var(--warning-bg); color: #fef3c7; }
+    .notice.info { background: rgba(59,130,246,.15); color: #dbeafe; }
+    label { font-size: .85rem; color: var(--text-label); display: flex; flex-direction: column; gap: 6px; }
+    input, select { font: inherit; padding: 12px; border-radius: 6px; border: 1px solid var(--divider);
+      background: var(--bg); color: var(--text); width: 100%; }
+    .check { flex-direction: row; align-items: flex-start; gap: 10px; color: var(--text); font-size: .92rem; }
+    .check input { width: auto; margin-top: 3px; }
+    button { font: inherit; font-weight: 600; border: 0; border-radius: 6px; padding: 14px; cursor: pointer; color: #fff;
+      background: var(--primary); width: 100%; }
+    button.warn { background: var(--warn); }
+    button.secondary { background: transparent; border: 1px solid var(--divider); color: var(--text-label); }
+    button:disabled { opacity: .45; cursor: default; }
+    .error { color: #f87171; font-size: .92rem; min-height: 1em; margin: 0; }
+    .status { display: flex; align-items: center; gap: 10px; font-size: 1.1rem; font-weight: 600; color: var(--text-strong); }
+    .badge { border-radius: 20px; padding: 4px 12px; font-size: .75rem; font-weight: 500; }
+    .badge.live { background: var(--success-bg); color: var(--success); }
+    .badge.off { background: var(--divider); color: var(--text-label); }
+    .pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--success); animation: pulse 1.2s infinite alternate; }
+    @keyframes pulse { from { opacity: .3; } to { opacity: 1; } }
+    dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: .9rem; }
+    dt { color: var(--text-label); } dd { margin: 0; color: var(--text); }
+    .hidden { display: none !important; }
+    footer { color: var(--text-muted); font-size: .8rem; text-align: center; padding: 8px 16px 24px; }
+  </style>
+</head>
+<body>
+  <header class="topbar"><span class="dot"></span>Rotacerta</header>
+  <main>
+    <div>
+      <h1>Rastreamento do motorista</h1>
+      <p class="sub">Envia a localização da van para o app dos colaboradores da rota.</p>
+    </div>
+
+    <div class="notice warning">
+      <strong>Segurança:</strong> configure tudo e toque em <em>Iniciar rota</em> <strong>antes de sair</strong>.
+      Deixe o celular no suporte com esta página aberta e <strong>não mexa nele dirigindo</strong>.
+    </div>
+
+    <!-- 1. Login -->
+    <section class="panel" id="login-panel">
+      <h2>Entrar</h2>
+      <form id="login-form" autocomplete="on">
+        <label>E-mail do motorista
+          <input type="email" id="email" required autocomplete="username" placeholder="cnh@empresa.com">
+        </label>
+        <label style="margin-top:12px">Senha
+          <input type="password" id="password" required autocomplete="current-password">
+        </label>
+        <p class="error" id="login-error" role="alert"></p>
+        <button type="submit" id="login-button">Entrar</button>
+      </form>
+    </section>
+
+    <!-- 2. Rota e envio -->
+    <section class="panel hidden" id="route-panel">
+      <h2 id="driver-name">Motorista</h2>
+      <label>Rota
+        <select id="route-select"></select>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="consent">
+        <span>Concordo em compartilhar minha localização com os passageiros desta rota enquanto o rastreamento estiver ligado.</span>
+      </label>
+      <p class="error" id="route-error" role="alert"></p>
+      <button id="start-button" disabled>Iniciar rota</button>
+      <button id="stop-button" class="warn hidden">Encerrar rota</button>
+      <button id="logout-button" class="secondary">Sair</button>
+    </section>
+
+    <!-- 3. Situação do envio -->
+    <section class="panel hidden" id="status-panel">
+      <div class="status">
+        <span id="status-dot" class="pulse hidden"></span>
+        <span id="status-text">Rastreamento desligado</span>
+        <span id="status-badge" class="badge off">parado</span>
+      </div>
+      <dl>
+        <dt>Posições enviadas</dt><dd id="sent-count">0</dd>
+        <dt>Último envio</dt><dd id="last-sent">—</dd>
+        <dt>Precisão do GPS</dt><dd id="accuracy">—</dd>
+        <dt>Velocidade</dt><dd id="speed">—</dd>
+        <dt>Tela ligada</dt><dd id="wakelock">—</dd>
+      </dl>
+      <div class="notice info" id="hidden-warning" style="display:none">
+        A página ficou em segundo plano: alguns celulares param o GPS assim. Volte para esta tela.
+      </div>
+    </section>
+  </main>
+  <footer>O envio acontece a cada 5 segundos, somente enquanto o rastreamento estiver ligado.</footer>
+
+<script>
+(() => {
+  const API = "/api";
+  const SEND_EVERY_MS = 5000;
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch {} },
+  };
+  let access = store.get("access"), refresh = store.get("refresh"), person = JSON.parse(store.get("person") || "null");
+  let routeId = null, watchId = null, timer = null, lastPos = null, sent = 0, wakeLock = null, tracking = false;
+
+  async function refreshToken() {
+    const r = await fetch(`${API}/auth/refresh/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh }) });
+    if (!r.ok) throw new Error("Sessão expirada. Entre novamente.");
+    access = (await r.json()).access_token; store.set("access", access);
+  }
+
+  async function api(path, options = {}, retry = true) {
+    const r = await fetch(`${API}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${access}`, ...(options.headers || {}) },
+    });
+    if (r.status === 401 && retry && refresh) { await refreshToken(); return api(path, options, false); }
+    return r;
+  }
+
+  async function errorText(r) {
+    try { const d = await r.json(); return d.detail || Object.values(d)[0]?.[0] || `Erro ${r.status}`; } catch { return `Erro ${r.status}`; }
+  }
+
+  // ---------- login
+  $("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    $("login-error").textContent = ""; $("login-button").disabled = true;
+    try {
+      const r = await fetch(`${API}/auth/login/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: $("email").value.trim().toLowerCase(), password: $("password").value }),
+      });
+      if (!r.ok) throw new Error(await errorText(r));
+      const d = await r.json();
+      if (d.person.type !== "DRIVER") throw new Error("Esta página é para motoristas. Colaboradores usam o app.");
+      access = d.access_token; refresh = d.refresh_token; person = d.person;
+      store.set("access", access); store.set("refresh", refresh); store.set("person", JSON.stringify(person));
+      await showRoutes();
+    } catch (err) { $("login-error").textContent = err.message; }
+    finally { $("login-button").disabled = false; }
+  });
+
+  async function showRoutes() {
+    const r = await api("/routes/my-routes/");
+    if (!r.ok) { logout(); $("login-error").textContent = await errorText(r); return; }
+    const routes = await r.json();
+    $("driver-name").textContent = person.name;
+    $("route-select").innerHTML = routes.length
+      ? routes.map(rt => `<option value="${rt.id}">${escapeHtml(rt.name)}${rt.vehicle ? " · " + escapeHtml(rt.vehicle.plate_number) : ""}</option>`).join("")
+      : `<option value="">Nenhuma rota com o seu veículo</option>`;
+    $("login-panel").classList.add("hidden");
+    $("route-panel").classList.remove("hidden");
+    $("status-panel").classList.remove("hidden");
+    updateStart();
+  }
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  function updateStart() { $("start-button").disabled = tracking || !$("consent").checked || !$("route-select").value; }
+  $("consent").addEventListener("change", updateStart);
+  $("route-select").addEventListener("change", updateStart);
+
+  // ---------- rastreamento
+  function currentPosition() {
+    return new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 20000 }));
+  }
+
+  function geoError(err) {
+    if (err && err.code === 1) return "Permissão de localização negada. Libere a localização para este site nas configurações do navegador.";
+    if (!window.isSecureContext) return "O navegador só libera o GPS em páginas https. Abra pelo endereço https do túnel.";
+    return "Não foi possível obter a localização (" + (err && err.message || "GPS indisponível") + ").";
+  }
+
+  async function postEvent(type, description, pos) {
+    if (!pos) return;
+    await api("/route-events/", { method: "POST", body: JSON.stringify({
+      route: routeId, event_type: type, description,
+      latitude: pos.coords.latitude.toFixed(6), longitude: pos.coords.longitude.toFixed(6),
+    }) }).catch(() => {});
+  }
+
+  async function sendPosition() {
+    if (!lastPos || !tracking) return;
+    const c = lastPos.coords;
+    const body = {
+      latitude: c.latitude.toFixed(6), longitude: c.longitude.toFixed(6),
+      heading: Number.isFinite(c.heading) ? c.heading : null,
+      speed: Number.isFinite(c.speed) && c.speed >= 0 ? c.speed : null,
+      recorded_at: new Date(lastPos.timestamp).toISOString(),
+    };
+    try {
+      const r = await api(`/routes/${routeId}/location/`, { method: "POST", body: JSON.stringify(body) });
+      if (!r.ok) { $("route-error").textContent = await errorText(r); return; }
+      sent += 1; $("route-error").textContent = "";
+      $("sent-count").textContent = sent;
+      $("last-sent").textContent = new Date().toLocaleTimeString("pt-BR");
+    } catch (err) { $("route-error").textContent = "Sem conexão: " + err.message + " (tentando de novo)"; }
+  }
+
+  async function keepScreenOn() {
+    try {
+      if ("wakeLock" in navigator) {
+        wakeLock = await navigator.wakeLock.request("screen");
+        $("wakelock").textContent = "sim";
+        wakeLock.addEventListener("release", () => { wakeLock = null; $("wakelock").textContent = "não"; });
+      } else { $("wakelock").textContent = "não suportado (desative o bloqueio de tela)"; }
+    } catch { $("wakelock").textContent = "não (desative o bloqueio de tela)"; }
+  }
+
+  $("start-button").addEventListener("click", async () => {
+    if (!("geolocation" in navigator)) { $("route-error").textContent = "Este navegador não tem GPS."; return; }
+    routeId = Number($("route-select").value);
+    $("route-error").textContent = ""; $("start-button").disabled = true;
+    try { lastPos = await currentPosition(); }
+    catch (err) { $("route-error").textContent = geoError(err); updateStart(); return; }
+
+    tracking = true;
+    await postEvent("departure", "Rota iniciada pelo motorista", lastPos);
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        lastPos = pos;
+        $("accuracy").textContent = Math.round(pos.coords.accuracy) + " m";
+        $("speed").textContent = Number.isFinite(pos.coords.speed) ? Math.round(pos.coords.speed * 3.6) + " km/h" : "—";
+      },
+      (err) => { $("route-error").textContent = geoError(err); },
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 },
+    );
+    await sendPosition();
+    timer = setInterval(sendPosition, SEND_EVERY_MS);
+    await keepScreenOn();
+    setTracking(true);
+  });
+
+  async function stopTracking(withArrival) {
+    if (!tracking) return;
+    tracking = false;
+    if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    clearInterval(timer); watchId = null; timer = null;
+    if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+    if (withArrival) await postEvent("arrival", "Rota encerrada pelo motorista", lastPos);
+    setTracking(false);
+  }
+
+  $("stop-button").addEventListener("click", () => stopTracking(true));
+
+  function setTracking(on) {
+    $("status-text").textContent = on ? "Enviando localização" : "Rastreamento desligado";
+    $("status-badge").textContent = on ? "ao vivo" : "parado";
+    $("status-badge").className = "badge " + (on ? "live" : "off");
+    $("status-dot").classList.toggle("hidden", !on);
+    $("stop-button").classList.toggle("hidden", !on);
+    $("start-button").classList.toggle("hidden", on);
+    $("route-select").disabled = on;
+    $("logout-button").disabled = on;
+    updateStart();
+  }
+
+  document.addEventListener("visibilitychange", async () => {
+    const hidden = document.visibilityState !== "visible";
+    $("hidden-warning").style.display = tracking && hidden ? "block" : "none";
+    if (!hidden && tracking && !wakeLock) await keepScreenOn();
+    if (!hidden && tracking) await sendPosition();
+  });
+  window.addEventListener("beforeunload", (e) => { if (tracking) { e.preventDefault(); e.returnValue = ""; } });
+
+  function logout() {
+    store.set("access", null); store.set("refresh", null); store.set("person", null);
+    access = refresh = person = null;
+    $("route-panel").classList.add("hidden"); $("status-panel").classList.add("hidden");
+    $("login-panel").classList.remove("hidden");
+  }
+  $("logout-button").addEventListener("click", logout);
+
+  if (access && person && person.type === "DRIVER") showRoutes().catch(logout);
+})();
+</script>
+</body>
+</html>
