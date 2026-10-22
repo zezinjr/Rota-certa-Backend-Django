@@ -6,6 +6,7 @@ entre os pontos). A posição da van é projetada nesse trajeto para saber quant
 falta até a parada do colaborador. A previsão usa velocidade média + tempo de
 parada, sem chamar APIs pagas (a previsão com trânsito fica para a etapa 2).
 """
+import hashlib
 import math
 from dataclasses import dataclass
 
@@ -13,6 +14,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import Address
+from .road_path import SOURCE_STRAIGHT, encode_polyline, get_road_path
 
 EARTH_RADIUS_M = 6_371_000
 # Distância (m) a partir da qual uma parada conta como "já passou" pela van.
@@ -54,8 +56,8 @@ class PathPoint:
     stop: object = None  # RouteStop, ou None para a empresa
 
 
-def route_path(route, stops=None):
-    """Paradas em ordem + empresa no final."""
+def route_waypoints(route, stops=None):
+    """Paradas em ordem + empresa no final, como PathPoints (linha reta)."""
     stops = list(stops if stops is not None else route.stops.filter(is_active=True).select_related(
         "meeting_point__address").order_by("sequence"))
     path = [
@@ -66,6 +68,39 @@ def route_path(route, stops=None):
     if dest is not None:
         path.append(PathPoint(float(dest.latitude), float(dest.longitude), None))
     return path
+
+
+def route_path(route, stops=None, waypoints=None):
+    """
+    Trajeto usado nos cálculos: pelas ruas quando disponível (core/road_path.py),
+    senão a linha reta entre as paradas. Os pontos das paradas carregam `stop`.
+    """
+    waypoints = waypoints if waypoints is not None else route_waypoints(route, stops)
+    road = get_road_path(route, [(p.lat, p.lng) for p in waypoints])
+    if road is None:
+        return waypoints
+    path = [PathPoint(lat, lng, None) for lat, lng in road["points"]]
+    for waypoint, index in zip(waypoints, road["stop_indexes"]):
+        if waypoint.stop is not None and 0 <= index < len(path):
+            path[index].stop = waypoint.stop
+    return path
+
+
+def path_version(path):
+    """Identifica o trajeto; o app só usa o progresso da van se a versão bater com a que desenhou."""
+    raw = ";".join(f"{p.lat:.5f},{p.lng:.5f}" for p in path)
+    return hashlib.sha1(raw.encode()).hexdigest()[:12]
+
+
+def path_payload(route, path=None):
+    """Trajeto para o app desenhar (polyline do Google, precisão 5), de onde veio e versão."""
+    path = path if path is not None else route_path(route)
+    source = (route.road_path or {}).get("source") if any(p.stop is None for p in path[:-1]) else None
+    return {
+        "polyline": encode_polyline([(p.lat, p.lng) for p in path]),
+        "source": source or SOURCE_STRAIGHT,
+        "version": path_version(path),
+    }
 
 
 def cumulative_distances(path):
@@ -203,7 +238,7 @@ def live_status(rp, now=None):
     if along is None:
         along = locate_on_path((float(location.latitude), float(location.longitude)), path, cum)
     segment, fraction = progress_from_along(along, cum)
-    result["path_progress"] = {"segment": segment, "fraction": round(fraction, 4)}
+    result["path_progress"] = {"segment": segment, "fraction": round(fraction, 4), "path_version": path_version(path)}
 
     pending = [j for j, p in enumerate(path) if p.stop is not None and cum[j] > along + REACHED_TOLERANCE_M]
     result["next_stop_sequence"] = path[pending[0]].stop.sequence if pending else None

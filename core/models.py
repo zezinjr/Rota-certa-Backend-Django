@@ -221,6 +221,12 @@ class Route(BaseModel):
         related_name="routes",
         help_text="Veículo (e motorista) atribuído à rota — usado pelo app do motorista.",
     )
+    road_path = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Trajeto pelas ruas (Google Routes), calculado a partir das paradas e "
+        "reaproveitado enquanto elas não mudam. Ver core/road_path.py.",
+    )
 
     def __str__(self):
         return self.name

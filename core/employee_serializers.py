@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .driver_serializers import _route_status_from_events
-from .live import company_destination
+from .live import company_destination, path_payload
 from .models import Address, RoutePassenger, Schedule
 
 
@@ -70,6 +70,7 @@ class EmployeeTripSerializer(serializers.BaseSerializer):
                 my_stop = item
 
         destination = company_destination(route)
+        path = path_payload(route)
 
         events = list(route.events.all()[:5])
         last_position = None
@@ -121,6 +122,7 @@ class EmployeeTripSerializer(serializers.BaseSerializer):
             "my_stop": my_stop,
             "stops": stops_out,
             "destination": _address_out(destination),
+            "path": path,
             "schedules": [
                 {"id": s.id, "time": s.time.strftime("%H:%M"), "weekdays": s.weekdays}
                 for s in schedules

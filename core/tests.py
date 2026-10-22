@@ -19,7 +19,8 @@ from .models import (
 PASSWORD = "Senha@Teste123"
 
 
-@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD)
+# Sem chave do Google: os testes nunca chamam a Routes API de verdade.
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD, GOOGLE_MAPS_API_KEY="")
 class EmployeeAppApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -113,7 +114,8 @@ class EmployeeAppApiTests(TestCase):
         self.assertEqual(self.client.get(f"/api/me/trips/{self.other_trip.id}/").status_code, 404)
 
 
-@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD)
+# Sem chave do Google: os testes nunca chamam a Routes API de verdade.
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD, GOOGLE_MAPS_API_KEY="")
 class ApiAccessControlTests(TestCase):
     """Login obrigatório em toda a API; CRUD só para gestores; motorista limitado às próprias rotas."""
 
@@ -198,8 +200,9 @@ class ApiAccessControlTests(TestCase):
             Person.objects.create(company=self.company, name="Sem código", phone="1", type="MANAGER")
 
 
-@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD)
-class LiveTrackingTests(TestCase):
+# Sem chave do Google: os testes nunca chamam a Routes API de verdade.
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD, GOOGLE_MAPS_API_KEY="")
+class LineRouteTestBase(TestCase):
     """
     Rota reta no sentido leste-oeste: paradas a cada 0,01° de longitude (~1,1 km)
     e a empresa no fim. O colaborador embarca na 3ª parada (sequence 2).
@@ -265,6 +268,10 @@ class LiveTrackingTests(TestCase):
         self.assertEqual(res.status_code, 200)
         return res.data
 
+
+
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD)
+class LiveTrackingTests(LineRouteTestBase):
     # --- envio do GPS pelo motorista
 
     def test_driver_sends_location_for_own_route(self):
@@ -359,3 +366,99 @@ class TrackingPageTests(TestCase):
         self.assertIn("Rastreamento do motorista", html)
         self.assertIn("/location/", html)
         self.assertIn("watchPosition", html)
+
+
+class FakeRoutesResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def read(self):
+        import json
+        return json.dumps(self.payload).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+@override_settings(ACCESS_ACCOUNT_AUTO_INITIAL_PASSWORD=PASSWORD, GOOGLE_MAPS_API_KEY="test-key")
+class RoadPathTests(LineRouteTestBase):
+    """Trajeto pelas ruas com a Routes API simulada: cada trecho contorna o quarteirão (sobe 0,005° e desce)."""
+
+    LNGS = [-60.00, -60.01, -60.02, -60.03, -60.04]  # 4 paradas + empresa
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        super().setUp()
+
+    def fake_response(self, *args, **kwargs):
+        from .road_path import encode_polyline
+        lat, top = float(self.LAT), float(self.LAT) + 0.005
+        legs = []
+        for a, b in zip(self.LNGS, self.LNGS[1:]):
+            legs.append({"distanceMeters": 2220, "polyline": {"encodedPolyline": encode_polyline(
+                [(lat, a), (top, a), (top, b), (lat, b)])}})
+        return FakeRoutesResponse({"routes": [{"distanceMeters": 2220 * 4, "legs": legs}]})
+
+    def patch_api(self, **kwargs):
+        from unittest import mock
+        return mock.patch("core.road_path.urllib.request.urlopen", side_effect=kwargs.get("side_effect", self.fake_response))
+
+    def test_without_key_uses_straight_line_and_never_calls_api(self):
+        with override_settings(GOOGLE_MAPS_API_KEY=""), self.patch_api() as api:
+            self.login("e1@acme.com")
+            trip = self.client.get("/api/me/trips/").data[0]
+        self.assertEqual(trip["path"]["source"], "straight")
+        api.assert_not_called()
+
+    def test_road_path_is_fetched_once_and_cached_on_the_route(self):
+        with self.patch_api() as api:
+            self.login("e1@acme.com")
+            trip = self.client.get("/api/me/trips/").data[0]
+            self.client.get("/api/me/trips/")
+            self.client.get(f"/api/me/trips/{self.trip.id}/live/")
+        self.assertEqual(api.call_count, 1)
+        self.assertEqual(trip["path"]["source"], "google")
+        self.route.refresh_from_db()
+        self.assertEqual(self.route.road_path["stop_indexes"], [0, 3, 6, 9, 12])
+
+    def test_eta_uses_the_distance_along_the_streets(self):
+        with self.patch_api():
+            self.login("cnh1@acme.com")
+            self.client.post(
+                f"/api/routes/{self.route.id}/location/",
+                {"latitude": str(float(self.LAT) + 0.005), "longitude": "-60.005"}, format="json")
+            data = self.live()
+            trip = self.client.get("/api/me/trips/").data[0]
+        # topo do 1º quarteirão: ~1110 m andados; parada 3 fica a 2 × 2220 m → faltam ~3330 m pelas ruas
+        self.assertAlmostEqual(data["eta"]["distance_meters"], 3330, delta=40)
+        self.assertEqual(data["eta"]["stops_before"], 1)
+        self.assertEqual(data["path_progress"]["path_version"], trip["path"]["version"])
+
+    def test_changing_stops_recomputes_the_path(self):
+        with self.patch_api() as api:
+            self.login("e1@acme.com")
+            self.client.get("/api/me/trips/")
+            stop = self.route.stops.get(sequence=1)
+            stop.meeting_point.address.latitude = Decimal("-3.101000")
+            stop.meeting_point.address.save()
+            self.client.get("/api/me/trips/")
+        self.assertEqual(api.call_count, 2)
+
+    def test_api_failure_falls_back_to_straight_line_and_backs_off(self):
+        import urllib.error
+        with self.patch_api(side_effect=urllib.error.URLError("offline")) as api:
+            self.login("e1@acme.com")
+            first = self.client.get("/api/me/trips/").data[0]
+            self.client.get("/api/me/trips/")
+        self.assertEqual(first["path"]["source"], "straight")
+        self.assertEqual(api.call_count, 1)  # não tenta de novo por 10 min
+
+    def test_polyline_codec_matches_google_reference(self):
+        from .road_path import decode_polyline, encode_polyline
+        points = [(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]
+        self.assertEqual(encode_polyline(points), "_p~iF~ps|U_ulLnnqC_mqNvxq`@")
+        self.assertEqual(decode_polyline("_p~iF~ps|U_ulLnnqC_mqNvxq`@"), points)

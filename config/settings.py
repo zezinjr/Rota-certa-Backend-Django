@@ -229,6 +229,8 @@ LIVE_ARRIVING_METERS = 300            # "chegando" quando a van está a essa dis
 LIVE_DESTINATION_METERS = 150         # "chegou" quando está a essa distância da empresa
 
 GOOGLE_MAPS_API_KEY = config("GOOGLE_MAPS_API_KEY", default="")
+# Trajeto das rotas pelas ruas (Google Routes API, calculado uma vez por rota). Ver core/road_path.py.
+ROAD_PATH_ENABLED = config("ROAD_PATH_ENABLED", default=True, cast=bool)
 GOOGLE_ROUTES_API_URL = config(
     "GOOGLE_ROUTES_API_URL",
     default="https://routes.googleapis.com/directions/v2:computeRoutes",

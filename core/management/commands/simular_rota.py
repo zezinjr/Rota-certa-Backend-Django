@@ -39,6 +39,7 @@ class Command(BaseCommand):
             raise CommandError("A rota precisa de pelo menos 2 pontos (paradas/empresa) com coordenadas.")
 
         cum = cumulative_distances(path)
+        source = "pelas ruas" if any(p.stop is None for p in path[:-1]) else "em linha reta (sem trajeto do Google)"
         if opts["speed_kmh"]:
             speed = max(opts["speed_kmh"], 1) / 3.6
         else:
@@ -46,7 +47,7 @@ class Command(BaseCommand):
             speed = cum[-1] / max(opts["minutos"] * 60 - stops_time, 30)
         step = speed * opts["interval"]
         self.stdout.write(self.style.SUCCESS(
-            f"Simulando '{route.name}' ({route.vehicle.plate_number}): {len(path)} pontos, "
+            f"Simulando '{route.name}' ({route.vehicle.plate_number}) {source}: {len(path)} pontos, "
             f"{cum[-1] / 1000:.1f} km a {speed * 3.6:.0f} km/h. Ctrl+C para parar."
         ))
         try:
@@ -75,17 +76,19 @@ class Command(BaseCommand):
         if not opts["no_events"]:
             self.event(route, "departure", "Simulação: saída da garagem", path[0])
         along = max(0.0, min(opts["start_meters"], cum[-1]))
-        next_stop = next((j for j in range(len(path)) if cum[j] >= along), len(path) - 1)
+        # Pontos onde a van "chega": paradas e o fim do trajeto (os demais são curvas das ruas).
+        checkpoints = [j for j, p in enumerate(path) if p.stop is not None or j == len(path) - 1]
+        checkpoints = [j for j in checkpoints if cum[j] >= along]
         while True:
             lat, lng, seg = self.point_at(path, cum, along)
             heading = bearing_deg((path[seg].lat, path[seg].lng), (path[seg + 1].lat, path[seg + 1].lng))
             save_vehicle_location(route.vehicle, route, Decimal(str(lat)), Decimal(str(lng)),
                                   heading=heading, speed=step / opts["interval"], recorded_at=timezone.now())
-            if next_stop < len(path) and along >= cum[next_stop]:
-                label = path[next_stop].stop.meeting_point.name if path[next_stop].stop else "empresa"
+            while checkpoints and along >= cum[checkpoints[0]]:
+                point = path[checkpoints.pop(0)]
+                label = point.stop.meeting_point.name if point.stop else "empresa"
                 self.stdout.write(f"  [{timezone.localtime():%H:%M:%S}] chegou em {label}")
-                next_stop += 1
-                if path[next_stop - 1].stop is not None and opts["stop_seconds"] > 0:
+                if point.stop is not None and opts["stop_seconds"] > 0:
                     time.sleep(opts["stop_seconds"])
             if along >= cum[-1]:
                 break

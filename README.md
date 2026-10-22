@@ -981,6 +981,16 @@ O colaborador só enxerga e altera os próprios registros (404 para os de outras
 - A previsão é calculada pela distância ao longo das paradas até o ponto do colaborador, usando a velocidade média (25 km/h, ou a velocidade informada pela van quando maior) mais 1 min por parada antes da sua. Não usa API paga.
 - Os parâmetros ficam em `config/settings.py` (`LIVE_*`). Esses dois endpoints têm limite próprio de requisições (`driver_location` e `trip_live`), separado do limite geral.
 
+### Trajeto pelas ruas (Google Routes API)
+
+Com uma chave de servidor do Google configurada, o trajeto de cada rota ("parada 1 → … → empresa") segue as ruas. Isso vale para o mapa do app, a previsão de chegada (distância pelas ruas), o progresso da van e o simulador. Sem chave, tudo continua em linha reta entre as paradas.
+
+1. No Google Cloud Console, ative a **Routes API** e crie uma chave restrita a ela. Em "Restrições do aplicativo", use **Nenhum** em desenvolvimento ou **Endereços IP** com o IP do servidor. Não use "Apps Android": essa chave é usada pelo backend, não pelo app.
+2. No `.env` (nunca no `.env.example`): `GOOGLE_MAPS_API_KEY=sua-chave-de-servidor`
+3. Opcional, para calcular tudo de uma vez: `python manage.py calcular_trajetos`
+
+O trajeto é guardado em `Route.road_path`, junto com uma assinatura das coordenadas das paradas. A API só é chamada de novo quando as paradas mudam, por isso o uso fica muito abaixo da cota gratuita. Em caso de erro, a rota usa a linha reta e a API só é tentada de novo depois de 10 min. Para desligar, use `ROAD_PATH_ENABLED=False`.
+
 ### Simulador (sem o app do motorista)
 
 ```bash
