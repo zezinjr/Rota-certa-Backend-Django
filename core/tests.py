@@ -349,3 +349,13 @@ class LiveTrackingTests(TestCase):
         second_pass = locate_on_path(crossing, path, cum, previous_along=cum[2] + 900)
         self.assertLess(first_pass, cum[1])   # ainda no 1º trecho
         self.assertGreater(second_pass, cum[2])  # já no trecho que cruza
+
+
+class TrackingPageTests(TestCase):
+    def test_tracking_page_is_public_and_uses_the_location_endpoint(self):
+        res = self.client.get("/rastreamento/")
+        self.assertEqual(res.status_code, 200)
+        html = res.content.decode()
+        self.assertIn("Rastreamento do motorista", html)
+        self.assertIn("/location/", html)
+        self.assertIn("watchPosition", html)
