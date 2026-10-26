@@ -96,6 +96,9 @@ class Person(BaseModel):
 
     license_number = models.CharField(max_length=100, null=True, blank=True)   # só driver
     employee_code = models.CharField(max_length=100, null=True, blank=True)    # employee e manager
+    # Avisos da van pelo WhatsApp: só com o consentimento do próprio colaborador (LGPD).
+    whatsapp_opt_in = models.BooleanField(default=False)
+    whatsapp_opt_in_at = models.DateTimeField(null=True, blank=True)
 
     def clean(self):
         if self.type == self.PersonType.DRIVER:
@@ -454,3 +457,46 @@ class VehicleLocation(models.Model):
 
     def __str__(self):
         return f"{self.vehicle} @ {self.latitude},{self.longitude}"
+
+
+class Notification(models.Model):
+    """
+    Aviso enviado (ou tentado) a um passageiro. A combinação passageiro + tipo + canal + dia
+    é única: cada aviso sai no máximo uma vez por dia, mesmo com o GPS chegando a cada 5 s.
+    """
+
+    class Kind(models.TextChoices):
+        DEPARTURE = "departure", "Van saiu"
+        APPROACHING = "approaching", "Van a poucos minutos"
+        ARRIVING = "arriving", "Van chegando"
+
+    class Channel(models.TextChoices):
+        WHATSAPP = "whatsapp", "WhatsApp"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pendente"
+        SENT = "sent", "Enviado"
+        FAILED = "failed", "Falhou"
+
+    route_passenger = models.ForeignKey(RoutePassenger, on_delete=models.CASCADE, related_name="notifications")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.WHATSAPP)
+    service_date = models.DateField(help_text="Dia da viagem (fuso local).")
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    recipient = models.CharField(max_length=30, help_text="Telefone no formato internacional, só dígitos.")
+    parameters = models.JSONField(default=list, blank=True)
+    provider_message_id = models.CharField(max_length=255, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["route_passenger", "kind", "channel", "service_date"],
+                name="unique_notification_per_day",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} → {self.recipient} ({self.status})"

@@ -183,6 +183,9 @@ def save_vehicle_location(vehicle, route, latitude, longitude, heading=None, spe
             "recorded_at": recorded_at or timezone.now(),
         },
     )
+    from .notifications import notify_route_progress  # import local: notifications usa live
+
+    notify_route_progress(route)
     return location
 
 

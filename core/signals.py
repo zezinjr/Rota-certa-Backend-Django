@@ -6,7 +6,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 
 from .access_passwords import generate_initial_access_password
-from .models import AccessAccount, Company, Person
+from .models import AccessAccount, Company, Person, RouteEvent
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +132,12 @@ def company_post_save_sync_access_emails(sender, instance, **kwargs):
 
     for person in persons:
         sync_access_account_email_for_person(person)
+
+
+@receiver(post_save, sender=RouteEvent)
+def notify_passengers_on_departure(sender, instance, created, **kwargs):
+    """Saída da rota registrada pelo motorista → aviso "a van saiu" pelo WhatsApp."""
+    if created and instance.event_type == "departure" and instance.is_active:
+        from .notifications import notify_departure
+
+        notify_departure(instance.route)

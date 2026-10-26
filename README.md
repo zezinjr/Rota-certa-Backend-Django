@@ -1048,6 +1048,68 @@ O comando mostra um endereço como `https://algo-aleatorio.trycloudflare.com`. C
 
 **Privacidade:** a posição só é enviada com o rastreamento ligado e só aparece para os passageiros daquela rota. Combine o teste com o motorista antes. O túnel expõe o seu backend local enquanto estiver aberto, então feche-o (Ctrl+C) ao terminar.
 
+## Avisos pelo WhatsApp
+
+O colaborador recebe no WhatsApp:
+
+| Aviso | Quando | Modelo (padrão) |
+|---|---|---|
+| A van está a poucos minutos | previsão de chegada ao ponto ≤ `WHATSAPP_APPROACHING_MINUTES` (10) | `rota_van_a_caminho` |
+| A van está chegando | van a menos de 300 m do ponto | `rota_van_chegando` |
+| A van saiu (desligado por padrão) | motorista toca em **Iniciar rota** | `rota_van_saiu` |
+
+Regras:
+- Só recebe quem **ativou os avisos no app** (Perfil → Avisos pelo WhatsApp), com consentimento registrado em `whatsapp_opt_in_at`. O gestor não consegue ativar pelo painel.
+- Cada aviso sai **no máximo uma vez por dia** por passageiro (tabela `Notification`), mesmo com o GPS chegando a cada 5 s.
+- Quem marcou "não vou hoje" não recebe.
+- O envio usa a **API oficial do WhatsApp (Meta WhatsApp Cloud API)**. Toda mensagem iniciada pela empresa precisa de um **modelo aprovado pela Meta**, e cada mensagem tem custo. Escolha quais avisos enviar em `WHATSAPP_EVENTS`.
+- Sem `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID` no `.env`, nada é enviado.
+- O simulador (`simular_rota`) também dispara os avisos, então dá para testar sem motorista.
+
+### 1. Crie o app na Meta (número de teste gratuito)
+
+1. Em <https://developers.facebook.com/apps>, crie um app do tipo **Empresa** e adicione o produto **WhatsApp**.
+2. Em **WhatsApp → Configuração da API**, a Meta fornece um **número de teste**. Anote o **Identificador do número de telefone** e gere o **Token de acesso temporário** (vale 24 h).
+3. Na mesma tela, em **Para**, cadastre o seu número de WhatsApp (até 5 números no modo de teste) e confirme o código recebido.
+4. No `.env` do backend:
+   ```
+   WHATSAPP_TOKEN=token-da-meta
+   WHATSAPP_PHONE_NUMBER_ID=identificador-do-numero
+   ```
+5. Teste com o modelo `hello_world`, que já vem aprovado:
+   ```bash
+   python manage.py testar_whatsapp --telefone +5592991234567
+   ```
+
+### 2. Crie os modelos de mensagem
+
+No **WhatsApp Manager → Modelos de mensagem → Criar modelo**, categoria **Utilidade**, idioma **Português (BR)**. Os nomes e as variáveis precisam ser exatamente estes (a ordem das variáveis importa):
+
+| Nome | Texto |
+|---|---|
+| `rota_van_a_caminho` | `Olá, {{1}}! A van da {{2}} chega ao seu ponto ({{3}}) em cerca de {{4}} minutos.` |
+| `rota_van_chegando` | `Olá, {{1}}! A van da {{2}} está chegando ao seu ponto ({{3}}). Prepare-se para embarcar.` |
+| `rota_van_saiu` | `Olá, {{1}}! A van da {{2}} saiu e já está a caminho. Acompanhe a localização pelo app Rota Certa.` |
+
+Variáveis: `{{1}}` primeiro nome do colaborador, `{{2}}` nome da rota, `{{3}}` nome do ponto de embarque, `{{4}}` minutos. A aprovação costuma levar minutos. Para conferir um modelo:
+
+```bash
+python manage.py testar_whatsapp --email mne007@amazonialogistica.com \
+  --modelo rota_van_chegando --idioma pt_BR --parametros Ana "Rota 02" "Ponto Centro"
+```
+
+### 3. Teste com o simulador
+
+1. No app, entre como o colaborador e ative **Avisos pelo WhatsApp** no Perfil. O telefone do cadastro dele precisa ser o seu número cadastrado no passo 1.3 (altere pelo painel).
+2. Rode `python manage.py simular_rota --email <email do colaborador> --minutos 5`.
+3. O WhatsApp recebe "a poucos minutos" e, depois, "chegando". Envios com erro ficam na tabela `core_notification` com o motivo em `error`.
+
+### Produção
+
+- O token temporário expira em 24 h. Gere um **token permanente** em **Configurações do negócio → Usuários do sistema**, com a permissão `whatsapp_business_messaging`.
+- Troque o número de teste por um número próprio da empresa (sem WhatsApp instalado nele).
+- O token é secreto: fica só no `.env` do servidor.
+
 # 🧪 Exemplos de utilização
 
 ## Criando um funcionário

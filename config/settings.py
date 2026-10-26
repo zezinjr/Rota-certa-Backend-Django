@@ -236,6 +236,23 @@ GOOGLE_ROUTES_API_URL = config(
     default="https://routes.googleapis.com/directions/v2:computeRoutes",
 )
 
+# Avisos da van pelo WhatsApp (Meta WhatsApp Cloud API). Ver core/notifications.py e o README.
+# Sem WHATSAPP_TOKEN e WHATSAPP_PHONE_NUMBER_ID, nada é enviado.
+WHATSAPP_TOKEN = config("WHATSAPP_TOKEN", default="")
+WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
+WHATSAPP_API_URL = config("WHATSAPP_API_URL", default="https://graph.facebook.com")
+WHATSAPP_API_VERSION = config("WHATSAPP_API_VERSION", default="v21.0")
+WHATSAPP_TEMPLATE_LANGUAGE = config("WHATSAPP_TEMPLATE_LANGUAGE", default="pt_BR")
+WHATSAPP_TEMPLATE_DEPARTURE = config("WHATSAPP_TEMPLATE_DEPARTURE", default="rota_van_saiu")
+WHATSAPP_TEMPLATE_APPROACHING = config("WHATSAPP_TEMPLATE_APPROACHING", default="rota_van_a_caminho")
+WHATSAPP_TEMPLATE_ARRIVING = config("WHATSAPP_TEMPLATE_ARRIVING", default="rota_van_chegando")
+# Quais avisos enviar (cada mensagem tem custo): departure, approaching, arriving.
+WHATSAPP_EVENTS = config("WHATSAPP_EVENTS", default="approaching,arriving")
+WHATSAPP_APPROACHING_MINUTES = config("WHATSAPP_APPROACHING_MINUTES", default=10, cast=int)
+WHATSAPP_DEFAULT_COUNTRY_CODE = config("WHATSAPP_DEFAULT_COUNTRY_CODE", default="55")
+# Envia numa thread depois do commit; False envia na hora (testes).
+WHATSAPP_ASYNC = config("WHATSAPP_ASYNC", default=True, cast=bool)
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "Route-monitoring API",
     "DESCRIPTION": "API for routes management system",
