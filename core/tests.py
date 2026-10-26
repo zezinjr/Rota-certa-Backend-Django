@@ -593,3 +593,107 @@ class WhatsAppNotificationTests(LineRouteTestBase):
         self.assertEqual(normalize_phone("(92) 99111-0000"), "5592991110000")
         self.assertEqual(normalize_phone("+1 415 555 0100"), "14155550100")
         self.assertEqual(normalize_phone("9203"), "")
+
+
+@override_settings(
+    GOOGLE_MAPS_API_KEY="",
+    WHATSAPP_PROVIDER="evolution",
+    WHATSAPP_TOKEN="",
+    EVOLUTION_API_URL="http://evolution.test:8080/",
+    EVOLUTION_API_KEY="evo-key",
+    EVOLUTION_INSTANCE="rotacerta",
+    WHATSAPP_ASYNC=False,
+    WHATSAPP_EVENTS="approaching,arriving",
+    WHATSAPP_APPROACHING_MINUTES=5,
+)
+class EvolutionWhatsAppTests(WhatsAppNotificationTests):
+    """Os mesmos avisos pela Evolution API: texto livre em /message/sendText/{instância}."""
+
+    def fake_meta(self, request, *args, **kwargs):
+        import json
+        self.requests.append(request)
+        self.sent.append(json.loads(request.data))
+        return FakeRoutesResponse({"key": {"id": f"evo.{len(self.sent)}"}, "status": "PENDING"})
+
+    def setUp(self):
+        super().setUp()
+        self.requests = []
+
+    def test_approaching_then_arriving_each_sent_once(self):
+        from .models import Notification
+        self.drive(-60.000, -60.012, -60.013, -60.018, -60.019)
+        self.assertEqual(len(self.sent), 2)
+        first, second = self.sent
+        self.assertEqual(first["number"], "5592991110000")
+        self.assertRegex(first["text"], r"^Olá, Colab! A van da Rota reta chega ao seu ponto \(Ponto 2\) em cerca de [1-5] minutos\.$")
+        self.assertEqual(second["text"], "Olá, Colab! A van da Rota reta está chegando ao seu ponto (Ponto 2). Prepare-se para embarcar.")
+        request = self.requests[0]
+        self.assertEqual(request.full_url, "http://evolution.test:8080/message/sendText/rotacerta")
+        self.assertEqual(request.get_header("Apikey"), "evo-key")
+        self.assertEqual(set(Notification.objects.values_list("status", flat=True)), {"sent"})
+
+    def test_departure_event_notifies_passengers(self):
+        from unittest import mock
+
+        from .models import RouteEvent
+        with override_settings(WHATSAPP_EVENTS="departure"), \
+                mock.patch("core.whatsapp.urllib.request.urlopen", side_effect=self.fake_meta), \
+                self.captureOnCommitCallbacks(execute=True):
+            RouteEvent.objects.create(route=self.route, event_type="departure", latitude=self.LAT, longitude=self.lng(-60.0))
+        self.assertEqual(len(self.sent), 1)
+        self.assertIn("saiu e já está a caminho", self.sent[0]["text"])
+
+    @override_settings(EVOLUTION_API_KEY="")
+    def test_disabled_without_credentials(self):
+        from .models import Notification
+        self.drive(-60.015)
+        self.assertEqual(self.sent, [])
+        self.assertFalse(Notification.objects.exists())
+
+    def test_meta_error_is_recorded(self):
+        import io
+        import urllib.error
+        from unittest import mock
+
+        from .models import Notification
+        body = b'{"status": 400, "error": "Bad Request", "response": {"message": [{"exists": false, "number": "5592991110000"}]}}'
+        error = urllib.error.HTTPError("http://evolution.test", 400, "Bad Request", {}, io.BytesIO(body))
+        self.login("cnh1@acme.com")
+        with mock.patch("core.whatsapp.urllib.request.urlopen", side_effect=error), \
+                self.captureOnCommitCallbacks(execute=True):
+            self.send(-60.015)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.status, "failed")
+        self.assertIn('"exists": false', notification.error)
+
+    def test_connect_command_creates_instance_and_saves_qr_code(self):
+        import base64
+        import io
+        import json
+        import os
+        import tempfile
+        import urllib.error
+        from unittest import mock
+
+        from django.core.management import call_command
+
+        png = base64.b64encode(b"\x89PNG fake").decode()
+        calls = []
+
+        def fake(request, *args, **kwargs):
+            calls.append((request.get_method(), request.full_url))
+            if "connectionState" in request.full_url:
+                raise urllib.error.HTTPError(request.full_url, 404, "Not Found", {}, io.BytesIO(
+                    b'{"status": 404, "response": {"message": ["The \\"rotacerta\\" instance does not exist"]}}'))
+            if request.full_url.endswith("instance/create"):
+                self.assertEqual(json.loads(request.data)["integration"], "WHATSAPP-BAILEYS")
+                return FakeRoutesResponse({"instance": {"instanceName": "rotacerta"}})
+            return FakeRoutesResponse({"pairingCode": None, "code": "2@abc", "base64": f"data:image/png;base64,{png}"})
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch("core.whatsapp.urllib.request.urlopen", side_effect=fake):
+            path = os.path.join(tmp, "qr.png")
+            call_command("conectar_whatsapp", arquivo=path, aguardar=0, stdout=io.StringIO())
+            with open(path, "rb") as fh:
+                self.assertEqual(fh.read(), b"\x89PNG fake")
+        self.assertEqual([m for m, _ in calls], ["GET", "POST", "GET"])
+        self.assertTrue(calls[2][1].endswith("/instance/connect/rotacerta"))

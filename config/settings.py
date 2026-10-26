@@ -236,8 +236,14 @@ GOOGLE_ROUTES_API_URL = config(
     default="https://routes.googleapis.com/directions/v2:computeRoutes",
 )
 
-# Avisos da van pelo WhatsApp (Meta WhatsApp Cloud API). Ver core/notifications.py e o README.
-# Sem WHATSAPP_TOKEN e WHATSAPP_PHONE_NUMBER_ID, nada é enviado.
+# Avisos da van pelo WhatsApp. Ver core/whatsapp.py, core/notifications.py e o README.
+# Provedor: "meta" (API oficial, com modelos aprovados) ou "evolution" (Evolution API, número via QR code).
+# Sem as credenciais do provedor escolhido, nada é enviado.
+WHATSAPP_PROVIDER = config("WHATSAPP_PROVIDER", default="meta")
+EVOLUTION_API_URL = config("EVOLUTION_API_URL", default="http://localhost:8080")
+EVOLUTION_API_KEY = config("EVOLUTION_API_KEY", default="")
+EVOLUTION_INSTANCE = config("EVOLUTION_INSTANCE", default="rotacerta")
+# Meta WhatsApp Cloud API
 WHATSAPP_TOKEN = config("WHATSAPP_TOKEN", default="")
 WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_API_URL = config("WHATSAPP_API_URL", default="https://graph.facebook.com")

@@ -1,5 +1,5 @@
 """
-Avisos da van para os colaboradores pelo WhatsApp.
+Avisos da van para os colaboradores pelo WhatsApp (Meta ou Evolution API, ver core/whatsapp.py).
 
 Gatilhos:
 - departure: o motorista registrou a saída da rota (evento "departure");
@@ -27,6 +27,14 @@ TEMPLATE_SETTINGS = {
     Notification.Kind.DEPARTURE: "WHATSAPP_TEMPLATE_DEPARTURE",
     Notification.Kind.APPROACHING: "WHATSAPP_TEMPLATE_APPROACHING",
     Notification.Kind.ARRIVING: "WHATSAPP_TEMPLATE_ARRIVING",
+}
+
+
+# Texto das mensagens na Evolution API: o mesmo dos modelos aprovados na Meta (ver README).
+MESSAGE_TEXTS = {
+    Notification.Kind.DEPARTURE: "Olá, {0}! A van da {1} saiu e já está a caminho. Acompanhe a localização pelo app Rota Certa.",
+    Notification.Kind.APPROACHING: "Olá, {0}! A van da {1} chega ao seu ponto ({2}) em cerca de {3} minutos.",
+    Notification.Kind.ARRIVING: "Olá, {0}! A van da {1} está chegando ao seu ponto ({2}). Prepare-se para embarcar.",
 }
 
 
@@ -113,9 +121,13 @@ def send_notification(notification_id):
     notification = Notification.objects.select_related("route_passenger").get(pk=notification_id)
     if notification.status == Notification.Status.SENT:
         return notification
-    template = getattr(settings, TEMPLATE_SETTINGS[notification.kind])
     try:
-        message_id = whatsapp.send_template(notification.recipient, template, notification.parameters)
+        if whatsapp.provider() == whatsapp.PROVIDER_EVOLUTION:
+            text = MESSAGE_TEXTS[notification.kind].format(*notification.parameters)
+            message_id = whatsapp.send_text(notification.recipient, text)
+        else:
+            template = getattr(settings, TEMPLATE_SETTINGS[notification.kind])
+            message_id = whatsapp.send_template(notification.recipient, template, notification.parameters)
     except whatsapp.WhatsAppError as exc:
         logger.warning("WhatsApp falhou (aviso %s, %s): %s", notification.pk, notification.kind, exc)
         notification.status, notification.error = Notification.Status.FAILED, str(exc)[:1000]
