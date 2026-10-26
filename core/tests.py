@@ -414,6 +414,22 @@ class RoadPathTests(LineRouteTestBase):
         self.assertEqual(trip["path"]["source"], "straight")
         api.assert_not_called()
 
+    def test_blocked_key_logs_reason_and_hint(self):
+        import io
+        import urllib.error
+
+        from .live import route_waypoints
+        from .road_path import get_road_path
+
+        body = (b'{"error": {"code": 403, "status": "PERMISSION_DENIED", "message": "Requests are blocked.", '
+                b'"details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_SERVICE_BLOCKED"}]}}')
+        error = urllib.error.HTTPError("https://routes", 403, "Forbidden", {}, io.BytesIO(body))
+        waypoints = [(p.lat, p.lng) for p in route_waypoints(self.route)]
+        with self.patch_api(side_effect=error), self.assertLogs("core.road_path", "WARNING") as logs:
+            self.assertIsNone(get_road_path(self.route, waypoints))
+        self.assertIn("API_KEY_SERVICE_BLOCKED", logs.output[0])
+        self.assertIn("Restrições de API", logs.output[0])
+
     def test_road_path_is_fetched_once_and_cached_on_the_route(self):
         with self.patch_api() as api:
             self.login("e1@acme.com")

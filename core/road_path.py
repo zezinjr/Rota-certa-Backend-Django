@@ -114,6 +114,33 @@ def _fetch_google(waypoints):
     return points, stop_indexes, route.get("distanceMeters")
 
 
+# Motivos de bloqueio mais comuns da chave, com a correção no Google Cloud.
+_REASON_HINTS = {
+    "API_KEY_SERVICE_BLOCKED": "a chave não tem a Routes API liberada em 'Restrições de API'",
+    "API_KEY_ANDROID_APP_BLOCKED": "a chave está restrita a 'Apps Android'; use 'Nenhum' ou 'Endereços IP'",
+    "API_KEY_HTTP_REFERRER_BLOCKED": "a chave está restrita a 'Sites'; use 'Nenhum' ou 'Endereços IP'",
+    "API_KEY_IP_ADDRESS_BLOCKED": "o IP deste servidor não está na lista de 'Endereços IP' da chave",
+    "API_KEY_INVALID": "a chave está errada ou foi apagada/regenerada",
+    "SERVICE_DISABLED": "a Routes API não está ativada no projeto",
+    "BILLING_DISABLED": "o projeto não tem faturamento ativo",
+}
+
+
+def _http_error_detail(exc):
+    body = exc.read().decode("utf-8", "ignore")
+    try:
+        error = json.loads(body)["error"]
+    except (ValueError, KeyError, TypeError):
+        return body[:300]
+    reasons = [d.get("reason") for d in error.get("details") or [] if d.get("reason")]
+    detail = f"{error.get('status', exc.code)}: {error.get('message', '')}"
+    for reason in reasons:
+        detail += f" [{reason}]"
+        if reason in _REASON_HINTS:
+            detail += f" -> {_REASON_HINTS[reason]}"
+    return detail
+
+
 def get_road_path(route, waypoints, force=False):
     """
     Trajeto pelas ruas para os `waypoints` [(lat, lng), ...] da rota (paradas + empresa).
@@ -136,7 +163,7 @@ def get_road_path(route, waypoints, force=False):
     try:
         points, stop_indexes, distance = _fetch_google(waypoints)
     except (urllib.error.URLError, ValueError, KeyError, TypeError) as exc:
-        detail = exc.read().decode("utf-8", "ignore")[:300] if isinstance(exc, urllib.error.HTTPError) else exc
+        detail = _http_error_detail(exc) if isinstance(exc, urllib.error.HTTPError) else exc
         logger.warning("Routes API falhou para a rota %s: %s", route.pk, detail)
         cache.set(failure_key, True, FAILURE_RETRY_SECONDS)
         return None
