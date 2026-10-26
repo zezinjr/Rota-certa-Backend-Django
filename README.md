@@ -970,6 +970,84 @@ Endpoints consumidos pelo app Android dos colaboradores. Exigem `Authorization: 
 
 O colaborador só enxerga e altera os próprios registros (404 para os de outras pessoas).
 
+## Acompanhamento ao vivo da van
+
+| Método | Endpoint | Quem | Descrição |
+|---|---|---|---|
+| POST | `/api/routes/{id}/location/` | Motorista (só as próprias rotas) | Envia o GPS: `{"latitude", "longitude", "heading"?, "speed"? (m/s), "recorded_at"?}` a cada 3–5 s durante a rota |
+| GET | `/api/me/trips/{id}/live/` | Colaborador (só as próprias viagens) | Posição da van, `is_live`, `phase` (`waiting`, `approaching`, `arriving`, `passed`, `at_destination`), `eta` (`minutes`, `distance_meters`, `stops_before`), `next_stop_sequence` e `path_progress` |
+
+- A última posição de cada veículo fica em `VehicleLocation`. Posições com mais de 2 min deixam de contar como "ao vivo".
+- A previsão é calculada pela distância ao longo das paradas até o ponto do colaborador, usando a velocidade média (25 km/h, ou a velocidade informada pela van quando maior) mais 1 min por parada antes da sua. Não usa API paga.
+- Os parâmetros ficam em `config/settings.py` (`LIVE_*`). Esses dois endpoints têm limite próprio de requisições (`driver_location` e `trip_live`), separado do limite geral.
+
+### Trajeto pelas ruas (Google Routes API)
+
+Com uma chave de servidor do Google configurada, o trajeto de cada rota ("parada 1 → … → empresa") segue as ruas. Isso vale para o mapa do app, a previsão de chegada (distância pelas ruas), o progresso da van e o simulador. Sem chave, tudo continua em linha reta entre as paradas.
+
+1. No Google Cloud Console, ative a **Routes API** e crie uma chave restrita a ela. Em "Restrições do aplicativo", use **Nenhum** em desenvolvimento ou **Endereços IP** com o IP do servidor. Não use "Apps Android": essa chave é usada pelo backend, não pelo app.
+2. No `.env` (nunca no `.env.example`): `GOOGLE_MAPS_API_KEY=sua-chave-de-servidor`
+3. Opcional, para calcular tudo de uma vez: `python manage.py calcular_trajetos`
+
+O trajeto é guardado em `Route.road_path`, junto com uma assinatura das coordenadas das paradas. A API só é chamada de novo quando as paradas mudam, por isso o uso fica muito abaixo da cota gratuita. Em caso de erro, a rota usa a linha reta e a API só é tentada de novo depois de 10 min. Para desligar, use `ROAD_PATH_ENABLED=False`.
+
+### Simulador (sem o app do motorista)
+
+```bash
+# Faz a van da rota do colaborador percorrer todas as paradas em ~5 minutos
+python manage.py simular_rota --email mne001@polodigitalmanaus.com
+
+# Outras opções: --route-id 3 · --minutos 10 · --speed-kmh 30 (ritmo real) · --loop · --start-meters 2000
+```
+
+O simulador grava a posição a cada 3 s, registra os eventos de saída e chegada, e para com Ctrl+C. Rode em um terminal separado, com o `runserver` aberto, e acompanhe no app.
+
+## Teste com um motorista de verdade (página de rastreamento)
+
+A página **`/rastreamento/`** é servida pelo próprio backend. O motorista entra com a conta dele, escolhe a rota e toca em **Iniciar rota**. A partir daí, o navegador do celular envia o GPS a cada 5 s e mantém a tela ligada. **Encerrar rota** registra a chegada e para o envio. Não precisa instalar nada.
+
+### 1. Crie uma rota no trajeto que o motorista vai fazer
+
+Pegue as coordenadas de 2 a 5 pontos do trajeto no Google Maps: um toque longo no mapa mostra algo como `-3.0956, -60.0343`.
+
+```bash
+python manage.py criar_rota_teste \
+  --motorista mnd002@amazonialogistica.com \
+  --colaborador mne002@amazonialogistica.com \
+  --pontos "-3.0956, -60.0343; -3.0609, -60.0259; -3.0745, -60.0065" \
+  --ponto-colaborador 3 \
+  --destino "-3.1300, -59.9670" \
+  --nome "Teste com motorista" --exclusivo
+```
+
+- `--motorista`: conta de motorista (`mndXXX@...`). A rota usa o veículo dele.
+- `--colaborador`: conta que vai acompanhar pelo app.
+- `--ponto-colaborador`: em qual parada o colaborador embarca.
+- `--destino`: ponto final (opcional).
+- `--exclusivo`: o app passa a mostrar só esta viagem.
+
+### 2. Deixe o backend acessível pela internet (HTTPS)
+
+O celular do motorista precisa alcançar o seu computador, e o navegador só libera o GPS em páginas `https`. Use um túnel. Com o `runserver 0.0.0.0:8000` rodando, em outro terminal:
+
+```bash
+# Cloudflare (sem cadastro) — Windows: winget install --id Cloudflare.cloudflared
+cloudflared tunnel --url http://localhost:8000
+# ou ngrok (precisa de conta gratuita): ngrok http 8000
+```
+
+O comando mostra um endereço como `https://algo-aleatorio.trycloudflare.com`. Com `DEBUG=True` no `.env`, o Django aceita esse endereço.
+
+### 3. No dia do teste
+
+1. **Motorista**, antes de sair: abre `https://<endereço-do-túnel>/rastreamento/` no Chrome do celular, entra, escolhe a rota, aceita o compartilhamento, toca em **Iniciar rota** e permite a localização. Depois deixa o celular no suporte, com a página aberta, **sem mexer nele dirigindo**.
+2. **Colaborador**, no app: abre a tela Viagem e toca em **Acompanhar no mapa**.
+   - No emulador, o app continua usando `http://10.0.2.2:8000/api/`.
+   - Num celular fora da sua rede, use a engrenagem da tela de login com `https://<endereço-do-túnel>/api/`.
+3. No fim, o motorista toca em **Encerrar rota**.
+
+**Privacidade:** a posição só é enviada com o rastreamento ligado e só aparece para os passageiros daquela rota. Combine o teste com o motorista antes. O túnel expõe o seu backend local enquanto estiver aberto, então feche-o (Ctrl+C) ao terminar.
+
 # 🧪 Exemplos de utilização
 
 ## Criando um funcionário

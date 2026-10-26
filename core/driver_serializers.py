@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import serializers
 
 
@@ -80,3 +83,19 @@ class DriverRouteBoardSerializer(serializers.BaseSerializer):
             "stops": stops_out,
             "passengers": passengers_out,
         }
+
+
+class VehicleLocationInputSerializer(serializers.Serializer):
+    """GPS enviado pelo app do motorista."""
+
+    latitude = serializers.DecimalField(max_digits=9, decimal_places=6, min_value=-90, max_value=90)
+    longitude = serializers.DecimalField(max_digits=9, decimal_places=6, min_value=-180, max_value=180)
+    heading = serializers.FloatField(required=False, allow_null=True, min_value=0, max_value=360)
+    speed = serializers.FloatField(required=False, allow_null=True, min_value=0)
+    recorded_at = serializers.DateTimeField(required=False)
+
+    def validate_recorded_at(self, value):
+        # Relógio do celular adiantado não pode deixar a posição "do futuro".
+        if value > timezone.now() + timedelta(minutes=1):
+            return timezone.now()
+        return value

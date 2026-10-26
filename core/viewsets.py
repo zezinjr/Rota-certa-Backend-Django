@@ -10,6 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
 
@@ -39,7 +40,8 @@ from .serializers import (
     RouteEventSerializer,
     VehicleSerializer,
 )
-from .driver_serializers import DriverRouteBoardSerializer
+from .driver_serializers import DriverRouteBoardSerializer, VehicleLocationInputSerializer
+from .live import save_vehicle_location
 from .permissions import IsDriver, IsManagerOrDriver
 from .filters import (
     CompanyFilter,
@@ -87,6 +89,7 @@ class RouteViewSet(BaseViewSet):
     queryset = Route.objects.select_related("company", "vehicle")
     serializer_class = RouteSerializer
     filterset_class = RouteFilter
+    throttle_scope = None  # definido só na action `location` (ScopedRateThrottle)
 
     @action(
         detail=False,
@@ -154,6 +157,40 @@ class RouteViewSet(BaseViewSet):
             pk=pk,
         )
         return Response(DriverRouteBoardSerializer().to_representation(route))
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="location",
+        permission_classes=[IsAuthenticated, IsDriver],
+        throttle_classes=[ScopedRateThrottle],
+        throttle_scope="driver_location",
+    )
+    def location(self, request, pk=None):
+        """
+        POST /api/routes/{id}/location/ — o app do motorista envia o GPS a cada poucos
+        segundos enquanto faz a rota. Só aceita rotas do próprio motorista.
+        """
+        route = get_object_or_404(
+            Route.objects.filter(is_active=True, vehicle__driver=request.user.person).select_related("vehicle"),
+            pk=pk,
+        )
+        ser = VehicleLocationInputSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        location = save_vehicle_location(
+            route.vehicle,
+            route,
+            data["latitude"],
+            data["longitude"],
+            heading=data.get("heading"),
+            speed=data.get("speed"),
+            recorded_at=data.get("recorded_at"),
+        )
+        return Response(
+            {"route": route.id, "recorded_at": location.recorded_at, "progress_meters": location.progress_meters},
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["get"])
     def events(self, request, pk=None):

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .driver_serializers import _route_status_from_events
+from .live import company_destination, path_payload
 from .models import Address, RoutePassenger, Schedule
 
 
@@ -68,13 +69,8 @@ class EmployeeTripSerializer(serializers.BaseSerializer):
             if item["is_my_stop"]:
                 my_stop = item
 
-        destination = (
-            Address.objects.filter(
-                is_active=True, person__isnull=True, company=route.company
-            )
-            .exclude(meeting_points__isnull=False)
-            .first()
-        )
+        destination = company_destination(route)
+        path = path_payload(route)
 
         events = list(route.events.all()[:5])
         last_position = None
@@ -83,6 +79,16 @@ class EmployeeTripSerializer(serializers.BaseSerializer):
                 "latitude": events[0].latitude,
                 "longitude": events[0].longitude,
                 "timestamp": events[0].timestamp,
+            }
+        # GPS da van (app do motorista/simulador), se for mais recente que o último evento.
+        location = getattr(vehicle, "location", None) if vehicle else None
+        if location is not None and location.route_id in (None, route.id) and (
+            last_position is None or location.recorded_at >= last_position["timestamp"]
+        ):
+            last_position = {
+                "latitude": location.latitude,
+                "longitude": location.longitude,
+                "timestamp": location.recorded_at,
             }
 
         schedules = Schedule.objects.filter(
@@ -116,6 +122,7 @@ class EmployeeTripSerializer(serializers.BaseSerializer):
             "my_stop": my_stop,
             "stops": stops_out,
             "destination": _address_out(destination),
+            "path": path,
             "schedules": [
                 {"id": s.id, "time": s.time.strftime("%H:%M"), "weekdays": s.weekdays}
                 for s in schedules
