@@ -256,6 +256,7 @@ WHATSAPP_TEMPLATE_ARRIVING = config("WHATSAPP_TEMPLATE_ARRIVING", default="rota_
 WHATSAPP_EVENTS = config("WHATSAPP_EVENTS", default="approaching,arriving")
 WHATSAPP_APPROACHING_MINUTES = config("WHATSAPP_APPROACHING_MINUTES", default=10, cast=int)
 WHATSAPP_DEFAULT_COUNTRY_CODE = config("WHATSAPP_DEFAULT_COUNTRY_CODE", default="55")
+WHATSAPP_HTTP_TIMEOUT = config("WHATSAPP_HTTP_TIMEOUT", default=30, cast=int)
 # Envia numa thread depois do commit; False envia na hora (testes).
 WHATSAPP_ASYNC = config("WHATSAPP_ASYNC", default=True, cast=bool)
 

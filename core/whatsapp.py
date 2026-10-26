@@ -76,11 +76,13 @@ def _request(method, url, headers, payload=None):
         url, data=data, headers={"Content-Type": "application/json", **headers}, method=method,
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=settings.WHATSAPP_HTTP_TIMEOUT) as response:
             return json.loads(response.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as exc:
         raise WhatsAppError(_error_detail(exc)) from exc
-    except (urllib.error.URLError, ValueError) as exc:
+    except TimeoutError as exc:
+        raise WhatsAppError(f"sem resposta em {settings.WHATSAPP_HTTP_TIMEOUT} s") from exc
+    except (OSError, ValueError) as exc:  # URLError, conexão recusada, JSON inválido
         raise WhatsAppError(str(exc)) from exc
 
 

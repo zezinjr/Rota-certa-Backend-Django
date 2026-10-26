@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from core import whatsapp
@@ -35,6 +36,8 @@ class Command(BaseCommand):
         to = whatsapp.normalize_phone(phone)
         if not to:
             raise CommandError(f"Telefone inválido: {phone!r}.")
+        if evolution:
+            self._check_evolution_connected()
         try:
             if evolution:
                 message_id = whatsapp.send_text(to, opts["mensagem"])
@@ -43,3 +46,21 @@ class Command(BaseCommand):
         except whatsapp.WhatsAppError as exc:
             raise CommandError(f"O envio falhou ({whatsapp.provider()}): {exc}")
         self.stdout.write(self.style.SUCCESS(f"Mensagem enviada para {to} (id {message_id})."))
+
+    def _check_evolution_connected(self):
+        try:
+            state = whatsapp.evolution_state()
+        except whatsapp.WhatsAppError as exc:
+            raise CommandError(
+                f"Não consegui falar com a Evolution API em {settings.EVOLUTION_API_URL}: {exc}\n"
+                "Ela está rodando (docker compose ... up -d) e a EVOLUTION_API_KEY é a mesma do .env?"
+            )
+        if state is None:
+            raise CommandError(
+                f"A instância \"{settings.EVOLUTION_INSTANCE}\" ainda não existe. Rode: python manage.py conectar_whatsapp"
+            )
+        if state != "open":
+            raise CommandError(
+                f"O número ainda não está conectado (estado: {state}). "
+                "Rode python manage.py conectar_whatsapp e escaneie o QR code."
+            )

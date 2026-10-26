@@ -29,7 +29,9 @@ class Command(BaseCommand):
             if state is None:
                 whatsapp.evolution_create_instance()
                 self.stdout.write(f"Instância \"{settings.EVOLUTION_INSTANCE}\" criada na Evolution API.")
-            elif state == "open":
+            else:
+                self.stdout.write(f"Estado atual da conexão: {state}.")
+            if state == "open":
                 self.stdout.write(self.style.SUCCESS("O número já está conectado. Nada a fazer."))
                 return
             number = whatsapp.normalize_phone(opts["numero"]) if opts["numero"] else None

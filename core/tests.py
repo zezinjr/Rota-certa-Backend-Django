@@ -697,3 +697,24 @@ class EvolutionWhatsAppTests(WhatsAppNotificationTests):
                 self.assertEqual(fh.read(), b"\x89PNG fake")
         self.assertEqual([m for m, _ in calls], ["GET", "POST", "GET"])
         self.assertTrue(calls[2][1].endswith("/instance/connect/rotacerta"))
+
+    def test_timeout_is_recorded_as_failure(self):
+        from unittest import mock
+
+        from .models import Notification
+        self.login("cnh1@acme.com")
+        with mock.patch("core.whatsapp.urllib.request.urlopen", side_effect=TimeoutError("timed out")), \
+                self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.send(-60.015).status_code, 200)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.status, "failed")
+        self.assertIn("sem resposta", notification.error)
+
+    def test_test_command_requires_connected_number(self):
+        from unittest import mock
+
+        from django.core.management import CommandError, call_command
+        with mock.patch("core.whatsapp.urllib.request.urlopen",
+                        return_value=FakeRoutesResponse({"instance": {"instanceName": "rotacerta", "state": "connecting"}})):
+            with self.assertRaisesMessage(CommandError, "ainda não está conectado (estado: connecting)"):
+                call_command("testar_whatsapp", telefone="+5592991110000")
