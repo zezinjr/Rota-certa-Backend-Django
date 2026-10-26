@@ -1,3 +1,5 @@
+import os
+
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
@@ -24,6 +26,9 @@ class Command(BaseCommand):
             )
         if not settings.ROAD_PATH_ENABLED:
             raise CommandError("ROAD_PATH_ENABLED=False no .env; o trajeto pelas ruas está desligado.")
+        key = settings.GOOGLE_MAPS_API_KEY
+        origin = "da variável de ambiente do sistema" if os.environ.get("GOOGLE_MAPS_API_KEY") else "do arquivo .env"
+        self.stdout.write(f"Usando a chave terminada em ...{key[-4:]} ({len(key)} caracteres, lida {origin}).")
         routes = Route.objects.filter(is_active=True).order_by("id")
         if opts["route_id"]:
             routes = routes.filter(pk=opts["route_id"])
