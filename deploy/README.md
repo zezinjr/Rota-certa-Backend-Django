@@ -96,11 +96,12 @@ Com o perfil ligado, use `--profile whatsapp` em todos os `docker compose up`.
 
 ## 6. App Android (Kotlin)
 
-O APK precisa sair com a URL da API embutida. No GitHub do frontend:
+O app fica no repositório [Rota-certa-Frontend-Kotlin](https://github.com/zezinjr/Rota-certa-Frontend-Kotlin)
+e o APK precisa sair com a URL da API embutida. No GitHub desse repositório:
 **Actions → Android APK → Run workflow** e preencha `api_base_url` com `https://SEU_DOMINIO/api/`.
 O APK fica em *Artifacts* na página da execução.
 
-Ou localmente, em `mobile/colaborador-android`:
+Ou localmente, na raiz desse repositório:
 
 ```bash
 ./gradlew assembleDebug -PapiBaseUrl=https://SEU_DOMINIO/api/
