@@ -1,0 +1,22 @@
+# Um domínio só: Angular em /, API do Django em /api, admin e estáticos do Django.
+# O Caddy emite e renova o certificado HTTPS (Let's Encrypt) sozinho.
+{$DOMAIN} {
+	encode zstd gzip
+
+	@django path /api/* /admin /admin/* /rastreamento /rastreamento/*
+	handle @django {
+		reverse_proxy backend:8000
+	}
+
+	handle_path /static/* {
+		root * /srv/static
+		file_server
+	}
+
+	# Angular (SPA): rotas desconhecidas caem no index.html.
+	handle {
+		root * /srv/app
+		try_files {path} /index.html
+		file_server
+	}
+}

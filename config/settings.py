@@ -130,10 +130,17 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:4200"
-]
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS", default="http://localhost:4200"
+).split(",")
 STATIC_URL = 'static/'
+# Destino do collectstatic; em produção o Caddy serve essa pasta em /static/ (ver deploy/).
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Atrás do Caddy (deploy/): o HTTPS termina no proxy, que avisa pelo X-Forwarded-Proto.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_METHODS = default_methods
 
