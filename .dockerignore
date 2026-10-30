@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.vscode
+.venv
+venv
+**/__pycache__
+*.sqlite3
+.env
+.env.*
+!.env.example
+staticfiles
+deploy
+docker
+whatsapp_qrcode.png

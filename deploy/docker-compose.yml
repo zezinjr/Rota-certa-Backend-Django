@@ -1,0 +1,101 @@
+# Stack de produção numa EC2 só (ver deploy/README.md). Na pasta deploy/:
+#   docker compose up -d --build                      # sem Evolution API
+#   docker compose --profile whatsapp up -d --build   # com Evolution API
+# O frontend é construído a partir do repositório do Angular clonado ao lado
+# deste (../../rota-certa-frontend-angular), ou de FRONTEND_DIR.
+name: rotacerta
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no deploy/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - static_files:/app/staticfiles
+
+  caddy:
+    build: ${FRONTEND_DIR:-../../rota-certa-frontend-angular}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN no deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - static_files:/srv/static:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # --- Evolution API (só com --profile whatsapp); não fica exposta na internet ---
+  evolution-api:
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: [whatsapp]
+    restart: unless-stopped
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    environment:
+      SERVER_URL: http://evolution-api:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}  # obrigatória com --profile whatsapp
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:evolution@evolution-postgres:5432/evolution?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: rotacerta
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution-redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Rota Certa
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      DEL_INSTANCE: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  evolution-postgres:
+    image: postgres:15
+    profiles: [whatsapp]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: evolution  # só acessível dentro desta rede do Docker
+    volumes:
+      - evolution_postgres:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7
+    profiles: [whatsapp]
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+
+volumes:
+  postgres_data:
+  static_files:
+  caddy_data:
+  caddy_config:
+  evolution_instances:
+  evolution_postgres:
+  evolution_redis:

@@ -38,6 +38,8 @@ class PersonSerializer(BaseSerializer):
     class Meta(BaseSerializer.Meta):
         model = Person
         fields = "__all__"
+        # O consentimento para o WhatsApp é dado pelo próprio colaborador no app, não pelo gestor.
+        read_only_fields = ["whatsapp_opt_in", "whatsapp_opt_in_at"]
 
     def get_auto_email(self, obj):
         return obj.get_auto_email()

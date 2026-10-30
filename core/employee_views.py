@@ -1,5 +1,6 @@
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -8,6 +9,7 @@ from rest_framework.views import APIView
 
 from .employee_serializers import (
     BoardingStatusSerializer,
+    EmployeePreferencesSerializer,
     EmployeeProfileSerializer,
     EmployeeTripSerializer,
 )
@@ -46,12 +48,26 @@ def _employee_trips_queryset(person):
 
 
 class EmployeeProfileView(APIView):
-    """GET /api/me/ — perfil do colaborador logado."""
+    """
+    GET /api/me/ — perfil do colaborador logado.
+    PATCH /api/me/ {"whatsapp_opt_in": true|false} — ativa ou desativa os avisos pelo WhatsApp.
+    """
 
     permission_classes = [IsAuthenticated, IsEmployee]
 
     def get(self, request):
         return Response(EmployeeProfileSerializer().to_representation(request.user.person))
+
+    def patch(self, request):
+        ser = EmployeePreferencesSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        person = request.user.person
+        opt_in = ser.validated_data["whatsapp_opt_in"]
+        if opt_in != person.whatsapp_opt_in:
+            person.whatsapp_opt_in = opt_in
+            person.whatsapp_opt_in_at = timezone.now() if opt_in else None
+            person.save(update_fields=["whatsapp_opt_in", "whatsapp_opt_in_at", "updated_at"])
+        return Response(EmployeeProfileSerializer().to_representation(person))
 
 
 class EmployeeTripsView(APIView):
