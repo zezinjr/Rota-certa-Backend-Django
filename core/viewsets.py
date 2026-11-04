@@ -5,56 +5,56 @@ import urllib.request
 from django.conf import settings
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
-from rest_framework import status, viewsets
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.throttling import ScopedRateThrottle
-from rest_framework.response import Response
 from rest_framework.filters import OrderingFilter
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
+from .driver_serializers import DriverRouteBoardSerializer, VehicleLocationInputSerializer
+from .filters import (
+    CompanyFilter,
+    DriverFilter,
+    EmployeeFilter,
+    MeetingPointFilter,
+    PersonFilter,
+    RouteEventFilter,
+    RouteFilter,
+    RoutePassengerFilter,
+    RouteStopFilter,
+    ScheduleFilter,
+    VehicleFilter,
+)
+from .live import save_vehicle_location
 from .models import (
+    Address,
     Company,
+    MeetingPoint,
     Person,
     Route,
-    RouteStop,
     RouteEvent,
-    Schedule,
-    Address,
-    MeetingPoint,
     RoutePassenger,
+    RouteStop,
+    Schedule,
     Vehicle,
 )
+from .permissions import IsDriver, IsManagerOrDriver
 from .serializers import (
+    AddressSerializer,
     CompanySerializer,
+    DriverSerializer,
+    EmployeeSerializer,
+    MeetingPointSerializer,
     PersonSerializer,
+    RouteEventSerializer,
+    RoutePassengerSerializer,
     RouteSerializer,
     RouteStopSerializer,
     ScheduleSerializer,
-    AddressSerializer,
-    MeetingPointSerializer,
-    DriverSerializer,
-    EmployeeSerializer,
-    RoutePassengerSerializer,
-    RouteEventSerializer,
     VehicleSerializer,
-)
-from .driver_serializers import DriverRouteBoardSerializer, VehicleLocationInputSerializer
-from .live import save_vehicle_location
-from .permissions import IsDriver, IsManagerOrDriver
-from .filters import (
-    CompanyFilter,
-    PersonFilter,
-    DriverFilter,
-    EmployeeFilter,
-    RouteFilter,
-    ScheduleFilter,
-    MeetingPointFilter,
-    RouteEventFilter,
-    RoutePassengerFilter,
-    VehicleFilter,
-    RouteStopFilter,
 )
 
 

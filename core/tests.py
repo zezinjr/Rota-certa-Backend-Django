@@ -323,7 +323,9 @@ class LiveTrackingTests(LineRouteTestBase):
 
     def test_stale_location_is_not_live(self):
         from datetime import timedelta
+
         from django.utils import timezone
+
         from .live import save_vehicle_location
 
         save_vehicle_location(self.vehicle, self.route, self.LAT, -60.005, recorded_at=timezone.now() - timedelta(minutes=10))
@@ -356,6 +358,14 @@ class LiveTrackingTests(LineRouteTestBase):
         second_pass = locate_on_path(crossing, path, cum, previous_along=cum[2] + 900)
         self.assertLess(first_pass, cum[1])   # ainda no 1º trecho
         self.assertGreater(second_pass, cum[2])  # já no trecho que cruza
+
+
+class HealthCheckTests(TestCase):
+    def test_health_is_public(self):
+        res = APIClient().get("/api/health/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["status"], "ok")
+        self.assertTrue(res.data["database"])
 
 
 class TrackingPageTests(TestCase):
@@ -482,6 +492,7 @@ class RoadPathTests(LineRouteTestBase):
 
 @override_settings(
     GOOGLE_MAPS_API_KEY="",
+    WHATSAPP_PROVIDER="meta",
     WHATSAPP_TOKEN="test-token",
     WHATSAPP_PHONE_NUMBER_ID="12345",
     WHATSAPP_ASYNC=False,
@@ -718,3 +729,214 @@ class EvolutionWhatsAppTests(WhatsAppNotificationTests):
                         return_value=FakeRoutesResponse({"instance": {"instanceName": "rotacerta", "state": "connecting"}})):
             with self.assertRaisesMessage(CommandError, "ainda não está conectado (estado: connecting)"):
                 call_command("testar_whatsapp", telefone="+5592991110000")
+
+
+_ACCOUNT, _PUBLIC_KEY = None, None
+
+
+def _fcm_settings():
+    """Conta de serviço falsa com uma chave RSA de verdade (para conferir a assinatura do JWT)."""
+    import json
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    global _ACCOUNT, _PUBLIC_KEY
+    if _ACCOUNT is None:
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        pem = key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption(),
+        ).decode()
+        _ACCOUNT = {
+            "type": "service_account", "project_id": "rota-certa-test", "private_key_id": "kid1",
+            "private_key": pem, "client_email": "fcm@rota-certa-test.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+        _PUBLIC_KEY = key.public_key()
+    return json.dumps(_ACCOUNT)
+
+
+@override_settings(
+    GOOGLE_MAPS_API_KEY="",
+    WHATSAPP_PROVIDER="meta",
+    WHATSAPP_TOKEN="",
+    WHATSAPP_ASYNC=False,
+    PUSH_EVENTS="departure,approaching,arriving",
+    PUSH_APPROACHING_MINUTES=5,
+)
+class PushNotificationTests(LineRouteTestBase):
+    """Push pelo Firebase Cloud Messaging com o Google simulado. O colaborador embarca em -60.02."""
+
+    TOKEN = "fcm-token-aparelho-1"
+
+    def setUp(self):
+        from . import push
+        super().setUp()
+        push._cache.update(account=None, account_key=None, token=None, expires_at=0.0)
+        override = override_settings(FCM_SERVICE_ACCOUNT_JSON=_fcm_settings(), FCM_SERVICE_ACCOUNT_FILE="")
+        override.enable()
+        self.addCleanup(override.disable)
+        self.messages, self.oauth_calls = [], []
+        self.fcm_error = None
+
+    def fake_google(self, request, *args, **kwargs):
+        import json
+        import urllib.parse
+        if request.full_url == "https://oauth2.googleapis.com/token":
+            self.oauth_calls.append(urllib.parse.parse_qs(request.data.decode()))
+            return FakeRoutesResponse({"access_token": "ya29.test", "expires_in": 3599, "token_type": "Bearer"})
+        self.assertEqual(request.full_url, "https://fcm.googleapis.com/v1/projects/rota-certa-test/messages:send")
+        self.assertEqual(request.get_header("Authorization"), "Bearer ya29.test")
+        if self.fcm_error:
+            raise self.fcm_error()
+        self.messages.append(json.loads(request.data)["message"])
+        return FakeRoutesResponse({"name": f"projects/rota-certa-test/messages/{len(self.messages)}"})
+
+    def register(self, token=None, email="e1@acme.com"):
+        self.login(email)
+        return self.client.post("/api/me/devices/", {"token": token or self.TOKEN, "platform": "android"}, format="json")
+
+    def drive(self, *lngs):
+        from unittest import mock
+        self.login("cnh1@acme.com")
+        with mock.patch("core.push.urllib.request.urlopen", side_effect=self.fake_google):
+            for lng in lngs:
+                with self.captureOnCommitCallbacks(execute=True):
+                    self.assertEqual(self.send(lng).status_code, 200)
+
+    def test_register_and_unregister_device(self):
+        from .models import PushDevice
+        self.login("e1@acme.com")
+        me = self.client.get("/api/me/").data
+        self.assertTrue(me["push_available"])
+        self.assertEqual(me["push_devices"], 0)
+        self.assertEqual(self.register().status_code, 201)
+        self.assertEqual(self.register().status_code, 200)  # mesmo token: só renova
+        self.assertEqual(self.client.get("/api/me/").data["push_devices"], 1)
+        self.assertEqual(self.client.post("/api/me/devices/", {}, format="json").status_code, 400)
+        res = self.client.post("/api/me/devices/unregister/", {"token": self.TOKEN}, format="json")
+        self.assertEqual(res.status_code, 204)
+        self.assertFalse(PushDevice.objects.get().is_active)
+        self.assertEqual(self.register().status_code, 200)  # registrar de novo reativa
+        self.assertTrue(PushDevice.objects.get().is_active)
+
+    def test_token_moves_to_the_new_owner(self):
+        from .models import PushDevice
+        self.register(email="e1@acme.com")
+        self.register(email="e2@acme.com")
+        self.assertEqual(PushDevice.objects.get().person.employee_code, "E2")
+
+    def test_drivers_cannot_register_devices(self):
+        self.login("cnh1@acme.com")
+        res = self.client.post("/api/me/devices/", {"token": self.TOKEN}, format="json")
+        self.assertEqual(res.status_code, 403)
+
+    def test_approaching_then_arriving_each_sent_once(self):
+        import jwt
+
+        from .models import Notification
+        self.register()
+        self.drive(-60.000)           # ~7 min do ponto: ainda não avisa
+        self.assertEqual(self.messages, [])
+        self.drive(-60.012, -60.013)  # ~3 min: avisa uma vez só
+        self.drive(-60.018, -60.019)  # a menos de 300 m: "chegando", uma vez só
+        self.assertEqual([m["notification"]["title"] for m in self.messages],
+                         ["A van está a caminho", "A van está chegando"])
+        first = self.messages[0]
+        self.assertEqual(first["token"], self.TOKEN)
+        self.assertRegex(first["notification"]["body"], r"^Olá, Colab! A van da Rota reta chega ao seu ponto \(Ponto 2\)")
+        self.assertEqual(first["data"], {
+            "type": "trip_update", "kind": "approaching", "trip_id": str(self.trip.id), "route_id": str(self.route.id),
+        })
+        self.assertEqual(first["android"]["notification"]["channel_id"], "avisos_da_van")
+        # Um token OAuth só, reaproveitado; o JWT vai assinado com a chave da conta de serviço.
+        self.assertEqual(len(self.oauth_calls), 1)
+        assertion = self.oauth_calls[0]["assertion"][0]
+        claims = jwt.decode(assertion, _PUBLIC_KEY, algorithms=["RS256"], audience="https://oauth2.googleapis.com/token")
+        self.assertEqual(claims["scope"], "https://www.googleapis.com/auth/firebase.messaging")
+        self.assertEqual(claims["iss"], _ACCOUNT["client_email"])
+        self.assertEqual(
+            set(Notification.objects.values_list("channel", "kind", "status", "recipient")),
+            {("push", "approaching", "sent", "1"), ("push", "arriving", "sent", "1")},
+        )
+
+    def test_no_push_without_device_or_when_absent(self):
+        self.drive(-60.015)
+        self.register()
+        self.trip.boarding_status = "absent"
+        self.trip.save()
+        self.drive(-60.016)
+        self.assertEqual(self.messages, [])
+
+    def test_disabled_without_service_account(self):
+        from .models import Notification
+        self.register()
+        with override_settings(FCM_SERVICE_ACCOUNT_JSON=""):
+            self.assertFalse(self.client.get("/api/me/").data["push_available"])
+            self.drive(-60.015)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_invalid_token_deactivates_the_device(self):
+        import io
+        import urllib.error
+
+        from .models import Notification, PushDevice
+        body = (b'{"error": {"code": 404, "message": "Requested entity was not found.", "status": "NOT_FOUND",'
+                b' "details": [{"@type": "type.googleapis.com/google.firebase.fcm.v1.FcmError",'
+                b' "errorCode": "UNREGISTERED"}]}}')
+        self.fcm_error = lambda: urllib.error.HTTPError("https://fcm", 404, "Not Found", {}, io.BytesIO(body))
+        self.register()
+        self.drive(-60.015)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.status, "failed")
+        self.assertIn("UNREGISTERED", notification.error)
+        device = PushDevice.objects.get()
+        self.assertFalse(device.is_active)
+        self.assertIn("UNREGISTERED", device.deactivated_reason)
+
+    def test_departure_event_notifies_passengers(self):
+        from unittest import mock
+        self.register()
+        with mock.patch("core.push.urllib.request.urlopen", side_effect=self.fake_google), \
+                self.captureOnCommitCallbacks(execute=True):
+            RouteEvent.objects.create(route=self.route, event_type="departure", latitude=self.LAT, longitude=self.lng(-60.0))
+        self.assertEqual([m["notification"]["title"] for m in self.messages], ["A van saiu"])
+
+    @override_settings(WHATSAPP_TOKEN="test-token", WHATSAPP_PHONE_NUMBER_ID="12345", WHATSAPP_EVENTS="arriving")
+    def test_push_and_whatsapp_are_independent(self):
+        from unittest import mock
+
+        from .models import Notification
+        self.employee.phone = "+55 92 99111-0000"
+        self.employee.whatsapp_opt_in = True
+        self.employee.save()
+        self.register()
+
+        def fake(request, *args, **kwargs):
+            if "graph.facebook.com" in request.full_url:
+                return FakeRoutesResponse({"messages": [{"id": "wamid.1"}]})
+            return self.fake_google(request)
+
+        self.login("cnh1@acme.com")
+        with mock.patch("urllib.request.urlopen", side_effect=fake):
+            for lng in (-60.018, -60.019):
+                with self.captureOnCommitCallbacks(execute=True):
+                    self.send(lng)
+        self.assertEqual(
+            sorted(Notification.objects.values_list("channel", "kind", "status")),
+            [("push", "arriving", "sent"), ("whatsapp", "arriving", "sent")],
+        )
+
+    def test_test_command(self):
+        import io
+        from unittest import mock
+
+        from django.core.management import CommandError, call_command
+        self.register()
+        out = io.StringIO()
+        with mock.patch("core.push.urllib.request.urlopen", side_effect=self.fake_google):
+            call_command("testar_push", colaborador_id=self.employee.id, stdout=out)
+            with self.assertRaisesMessage(CommandError, "não tem aparelho ativo"):
+                call_command("testar_push", colaborador_id=self.driver.id, stdout=io.StringIO())
+        self.assertIn("enviado", out.getvalue())
+        self.assertEqual(self.messages[0]["data"], {"type": "test"})

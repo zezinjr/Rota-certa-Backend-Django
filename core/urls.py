@@ -14,22 +14,25 @@ from .auth_views import (
 from .employee_views import (
     EmployeeBoardingView,
     EmployeeProfileView,
+    EmployeePushDeviceUnregisterView,
+    EmployeePushDeviceView,
     EmployeeTripDetailView,
     EmployeeTripLiveView,
     EmployeeTripsView,
 )
+from .views import HealthView
 from .viewsets import (
-    CompanyViewSet,
-    PersonViewSet,
-    RouteViewSet,
-    RouteStopViewSet,
-    ScheduleViewSet,
     AddressViewSet,
-    MeetingPointViewSet,
+    CompanyViewSet,
     DriverViewSet,
     EmployeeViewSet,
-    RoutePassengerViewSet,
+    MeetingPointViewSet,
+    PersonViewSet,
     RouteEventViewSet,
+    RoutePassengerViewSet,
+    RouteStopViewSet,
+    RouteViewSet,
+    ScheduleViewSet,
     VehicleViewSet,
 )
 
@@ -48,6 +51,7 @@ router.register(r'route-events', RouteEventViewSet,basename='event')
 router.register(r"vehicles", VehicleViewSet,basename='vehicle')
 
 urlpatterns = [
+    path("health/", HealthView.as_view(), name="health"),
     path("auth/login/", LoginView.as_view(), name="auth-login"),
     path("auth/refresh/", AccessAccountTokenRefreshView.as_view(), name="auth-refresh"),
     path("auth/verify/", AccessAccountTokenVerifyView.as_view(), name="auth-verify"),
@@ -72,6 +76,8 @@ urlpatterns = [
         name="auth-password-reset-reset",
     ),
     path("me/", EmployeeProfileView.as_view(), name="me-profile"),
+    path("me/devices/", EmployeePushDeviceView.as_view(), name="me-devices"),
+    path("me/devices/unregister/", EmployeePushDeviceUnregisterView.as_view(), name="me-devices-unregister"),
     path("me/trips/", EmployeeTripsView.as_view(), name="me-trips"),
     path("me/trips/<int:pk>/", EmployeeTripDetailView.as_view(), name="me-trip-detail"),
     path("me/trips/<int:pk>/live/", EmployeeTripLiveView.as_view(), name="me-trip-live"),

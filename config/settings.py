@@ -267,6 +267,20 @@ WHATSAPP_HTTP_TIMEOUT = config("WHATSAPP_HTTP_TIMEOUT", default=30, cast=int)
 # Envia numa thread depois do commit; False envia na hora (testes).
 WHATSAPP_ASYNC = config("WHATSAPP_ASYNC", default=True, cast=bool)
 
+# Notificações push no app do colaborador (Firebase Cloud Messaging, API HTTP v1).
+# Ver core/push.py e o README. Sem a conta de serviço do Firebase, nada é enviado.
+# Use um dos dois: caminho do JSON da conta de serviço ou o próprio JSON (texto ou base64).
+FCM_SERVICE_ACCOUNT_FILE = config("FCM_SERVICE_ACCOUNT_FILE", default="")
+FCM_SERVICE_ACCOUNT_JSON = config("FCM_SERVICE_ACCOUNT_JSON", default="")
+# Vazio = o project_id da conta de serviço.
+FCM_PROJECT_ID = config("FCM_PROJECT_ID", default="")
+# Canal de notificação criado pelo app Android (Android 8+).
+FCM_ANDROID_CHANNEL_ID = config("FCM_ANDROID_CHANNEL_ID", default="avisos_da_van")
+FCM_HTTP_TIMEOUT = config("FCM_HTTP_TIMEOUT", default=15, cast=int)
+# Push é gratuito, então por padrão vão os três avisos.
+PUSH_EVENTS = config("PUSH_EVENTS", default="departure,approaching,arriving")
+PUSH_APPROACHING_MINUTES = config("PUSH_APPROACHING_MINUTES", default=WHATSAPP_APPROACHING_MINUTES, cast=int)
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "Route-monitoring API",
     "DESCRIPTION": "API for routes management system",

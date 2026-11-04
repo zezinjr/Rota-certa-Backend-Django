@@ -1,10 +1,9 @@
 from rest_framework import serializers
 
-from . import whatsapp
-
+from . import push, whatsapp
 from .driver_serializers import _route_status_from_events
 from .live import company_destination, path_payload
-from .models import Address, RoutePassenger, Schedule
+from .models import Address, PushDevice, RoutePassenger, Schedule
 
 
 def _address_subtitle(addr):
@@ -42,11 +41,21 @@ class EmployeeProfileSerializer(serializers.BaseSerializer):
             "whatsapp_opt_in": person.whatsapp_opt_in,
             # Os avisos só funcionam com a integração configurada no servidor e um telefone válido.
             "whatsapp_available": whatsapp.is_enabled() and bool(whatsapp.normalize_phone(person.phone)),
+            # Push: o servidor tem o Firebase configurado; o app registra o aparelho em /api/me/devices/.
+            "push_available": push.is_enabled(),
+            "push_devices": person.push_devices.filter(is_active=True).count(),
         }
 
 
 class EmployeePreferencesSerializer(serializers.Serializer):
     whatsapp_opt_in = serializers.BooleanField()
+
+
+class PushDeviceSerializer(serializers.Serializer):
+    """Token do Firebase Cloud Messaging do aparelho (FirebaseMessaging.getInstance().token)."""
+
+    token = serializers.CharField(max_length=512, trim_whitespace=True)
+    platform = serializers.ChoiceField(choices=PushDevice.Platform.choices, default=PushDevice.Platform.ANDROID)
 
 
 class EmployeeTripSerializer(serializers.BaseSerializer):

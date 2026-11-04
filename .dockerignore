@@ -13,3 +13,6 @@ staticfiles
 deploy
 docker
 whatsapp_qrcode.png
+.ruff_cache
+*.pem
+firebase*.json

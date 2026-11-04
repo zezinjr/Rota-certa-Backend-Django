@@ -12,9 +12,10 @@ from .employee_serializers import (
     EmployeePreferencesSerializer,
     EmployeeProfileSerializer,
     EmployeeTripSerializer,
+    PushDeviceSerializer,
 )
 from .live import live_status
-from .models import RouteEvent, RoutePassenger, RouteStop
+from .models import PushDevice, RouteEvent, RoutePassenger, RouteStop
 from .permissions import IsEmployee
 
 
@@ -128,3 +129,49 @@ class EmployeeTripLiveView(APIView):
             pk=pk,
         )
         return Response(live_status(rp))
+
+
+class EmployeePushDeviceView(APIView):
+    """
+    POST /api/me/devices/ {"token": "...", "platform": "android"} — registra (ou renova) o aparelho
+    para receber as notificações push. Chame depois do login e em onNewToken do Firebase.
+    Um token que estava com outro colaborador (aparelho trocou de dono) passa para o logado.
+    """
+
+    permission_classes = [IsAuthenticated, IsEmployee]
+
+    def post(self, request):
+        ser = PushDeviceSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        device, created = PushDevice.objects.update_or_create(
+            token=ser.validated_data["token"],
+            defaults={
+                "person": request.user.person,
+                "platform": ser.validated_data["platform"],
+                "is_active": True,
+                "deactivated_reason": "",
+                "last_seen_at": timezone.now(),
+            },
+        )
+        return Response(
+            {"id": device.id, "platform": device.platform, "is_active": device.is_active},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class EmployeePushDeviceUnregisterView(APIView):
+    """
+    POST /api/me/devices/unregister/ {"token": "..."} — para de mandar push para este aparelho
+    (logout ou o colaborador desligou as notificações). Responde 204 mesmo se o token não existir.
+    """
+
+    permission_classes = [IsAuthenticated, IsEmployee]
+
+    def post(self, request):
+        token = str(request.data.get("token") or "").strip()
+        if not token:
+            return Response({"token": ["Este campo é obrigatório."]}, status=status.HTTP_400_BAD_REQUEST)
+        PushDevice.objects.filter(token=token, person=request.user.person).update(
+            is_active=False, deactivated_reason="removido pelo app",
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)

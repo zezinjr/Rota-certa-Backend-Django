@@ -21,6 +21,9 @@ services:
       retries: 10
 
   backend:
+    # O CI/CD publica a imagem no GHCR e o deploy.sh baixa a tag do commit (BACKEND_TAG).
+    # "docker compose up -d --build" continua construindo aqui mesmo, a partir do código local.
+    image: ${BACKEND_IMAGE:-ghcr.io/zezinjr/rota-certa-backend-django}:${BACKEND_TAG:-latest}
     build: ..
     restart: unless-stopped
     env_file: .env
@@ -29,6 +32,9 @@ services:
         condition: service_healthy
     volumes:
       - static_files:/app/staticfiles
+      # Conta de serviço do Firebase (push): deploy/secrets/firebase.json no servidor,
+      # com FCM_SERVICE_ACCOUNT_FILE=/app/secrets/firebase.json no .env.
+      - ./secrets:/app/secrets:ro
 
   caddy:
     build: ${FRONTEND_DIR:-../../rota-certa-frontend-angular}

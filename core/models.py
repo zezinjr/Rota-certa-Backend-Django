@@ -472,6 +472,7 @@ class Notification(models.Model):
 
     class Channel(models.TextChoices):
         WHATSAPP = "whatsapp", "WhatsApp"
+        PUSH = "push", "Push (app)"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pendente"
@@ -483,7 +484,10 @@ class Notification(models.Model):
     channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.WHATSAPP)
     service_date = models.DateField(help_text="Dia da viagem (fuso local).")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
-    recipient = models.CharField(max_length=30, help_text="Telefone no formato internacional, só dígitos.")
+    recipient = models.CharField(
+        max_length=30, blank=True,
+        help_text="WhatsApp: telefone no formato internacional, só dígitos. Push: nº de aparelhos que receberam.",
+    )
     parameters = models.JSONField(default=list, blank=True)
     provider_message_id = models.CharField(max_length=255, blank=True)
     error = models.TextField(blank=True)
@@ -500,3 +504,27 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} → {self.recipient} ({self.status})"
+
+
+class PushDevice(models.Model):
+    """
+    Aparelho do colaborador que recebe notificações push (token do Firebase Cloud Messaging).
+    O app registra o token depois do login e quando o Firebase o renova, e o remove no logout.
+    Tokens que o FCM diz que não valem mais são desativados no primeiro envio que falhar.
+    """
+
+    class Platform(models.TextChoices):
+        ANDROID = "android", "Android"
+        IOS = "ios", "iOS"
+        WEB = "web", "Web"
+
+    person = models.ForeignKey(Person, on_delete=models.CASCADE, related_name="push_devices")
+    token = models.CharField(max_length=512, unique=True)
+    platform = models.CharField(max_length=20, choices=Platform.choices, default=Platform.ANDROID)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    deactivated_reason = models.CharField(max_length=255, blank=True)
+
+    def __str__(self):
+        return f"{self.person} — {self.get_platform_display()} ({'ativo' if self.is_active else 'inativo'})"

@@ -3,7 +3,7 @@ import os
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from core.live import route_path, route_waypoints
+from core.live import route_waypoints
 from core.models import Route
 from core.road_path import get_road_path
 

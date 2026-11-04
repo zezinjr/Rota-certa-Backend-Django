@@ -967,6 +967,10 @@ Endpoints consumidos pelo app Android dos colaboradores. Exigem `Authorization: 
 | GET | `/api/me/trips/` | Rotas em que o colaborador é passageiro: status da rota, veículo, motorista, meu ponto, paradas, destino, horários e últimos eventos |
 | GET | `/api/me/trips/{id}/` | Detalhe de uma viagem (id do `RoutePassenger`) |
 | POST | `/api/me/trips/{id}/boarding/` | Confirma ou informa ausência: `{"status": "confirmed" \| "absent" \| "pending"}` |
+| POST | `/api/me/devices/` | Registra o aparelho para notificações push: `{"token": "<token FCM>", "platform": "android"}` (201 novo, 200 já existia) |
+| POST | `/api/me/devices/unregister/` | Para de mandar push para o aparelho (logout): `{"token": "<token FCM>"}` → 204 |
+
+`GET /api/health/` (sem login) responde `{"status": "ok", "database": true, "push": …, "whatsapp": …}`; é o que o deploy automático confere.
 
 O colaborador só enxerga e altera os próprios registros (404 para os de outras pessoas).
 
@@ -1159,6 +1163,51 @@ python manage.py testar_whatsapp --email mne007@amazonialogistica.com \
 - Troque o número de teste por um número próprio da empresa (sem WhatsApp instalado nele).
 - O token é secreto: fica só no `.env` do servidor.
 
+## Notificações push (Firebase Cloud Messaging)
+
+Os mesmos avisos do WhatsApp também chegam como notificação no celular, pelo app. É gratuito,
+então por padrão vão os três (`PUSH_EVENTS=departure,approaching,arriving`):
+
+| Aviso | Título | `data.kind` |
+|---|---|---|
+| A van saiu | "A van saiu" | `departure` |
+| A poucos minutos (≤ `PUSH_APPROACHING_MINUTES`, padrão igual ao do WhatsApp) | "A van está a caminho" | `approaching` |
+| Chegando (a menos de 300 m) | "A van está chegando" | `arriving` |
+
+Regras:
+- Recebe quem tem **aparelho ativo** registrado em `POST /api/me/devices/`. Registrar o aparelho é o consentimento: no Android 13+ o app só consegue o token depois que o usuário permite notificações.
+- Uma vez por dia por passageiro e aviso, como no WhatsApp, mas os canais são independentes: quem tem os dois recebe nos dois.
+- Quem marcou "não vou hoje" não recebe.
+- O aviso vai para todos os aparelhos ativos do colaborador. Tokens que o FCM recusa (`UNREGISTERED`, app desinstalado) são desativados sozinhos.
+- Cada envio fica em `Notification` com `channel=push`; em `recipient` fica quantos aparelhos receberam. Os dois aparecem no admin.
+
+### 1. Configurar o Firebase (uma vez)
+
+1. Em [console.firebase.google.com](https://console.firebase.google.com), crie um projeto e **adicione um app Android** com o `applicationId` do app Kotlin. Baixe o `google-services.json` (ele vai no app, não no backend).
+2. **Configurações do projeto → Contas de serviço → Gerar nova chave privada**. Isso baixa um JSON secreto.
+3. No `.env` do backend, aponte para esse arquivo:
+   ```env
+   FCM_SERVICE_ACCOUNT_FILE=C:/caminho/firebase-conta-de-servico.json
+   ```
+   Ou cole o JSON (em texto ou base64) em `FCM_SERVICE_ACCOUNT_JSON`. No servidor, veja `deploy/README.md`, seção 5.1.
+4. Teste com um aparelho já registrado:
+   ```bash
+   python manage.py testar_push --colaborador-id 12
+   # ou direto para um token: python manage.py testar_push --token "<token FCM>"
+   ```
+
+### 2. O que o app Android precisa fazer
+
+- Dependência `com.google.firebase:firebase-messaging` e o `google-services.json`.
+- Pedir a permissão `POST_NOTIFICATIONS` (Android 13+).
+- Criar o canal de notificação `avisos_da_van` (o id está em `FCM_ANDROID_CHANNEL_ID`), com importância alta.
+- Depois do login: `FirebaseMessaging.getInstance().token` → `POST /api/me/devices/`. Em `onNewToken`, registrar de novo.
+- No logout: `POST /api/me/devices/unregister/` com o token, **antes** de apagar o JWT.
+- A notificação traz `data` com `type=trip_update`, `kind`, `trip_id` (id do `RoutePassenger`, o mesmo de `/api/me/trips/{id}/`) e `route_id`. Ao tocar, abra a tela da viagem `trip_id`.
+- Com o app em segundo plano o Android mostra a notificação sozinho; em primeiro plano ela chega em `onMessageReceived` e o app decide como mostrar.
+
+`GET /api/me/` traz `push_available` (o servidor tem o Firebase configurado) e `push_devices` (quantos aparelhos ativos o colaborador tem).
+
 # 🧪 Exemplos de utilização
 
 ## Criando um funcionário
@@ -1267,17 +1316,27 @@ Ou, caso sejam utilizados testes específicos:
 python manage.py test core
 ```
 
-## Integração contínua (GitHub Actions)
+## CI/CD (GitHub Actions)
 
-O workflow [`.github/workflows/tests.yml`](.github/workflows/tests.yml) roda a cada push na `main`
-e em todo pull request (também pode ser disparado manualmente em **Actions → Testes do backend → Run workflow**):
+O workflow [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) roda em todo pull request,
+a cada push na `main` e manualmente em **Actions → CI/CD → Run workflow**:
 
-1. `python manage.py check` — configuração do Django;
-2. `python manage.py makemigrations --check --dry-run` — falha se um model mudou sem migração;
-3. `python manage.py test` — testes automatizados;
-4. `migrate` + `seed_manaus_demo` — garante que o seed de demonstração continua funcionando.
+| Job | O que faz | Quando |
+|---|---|---|
+| **Lint** | `ruff check` (regras em [`ruff.toml`](ruff.toml)) | sempre |
+| **Testes** | `manage.py check`, `makemigrations --check`, `manage.py test`, `migrate` + `seed_manaus_demo` | sempre |
+| **Build e push** | constrói a imagem do `Dockerfile` e publica em `ghcr.io/zezinjr/rota-certa-backend-django` com as tags `sha-<commit>` e `latest` | sempre; em PR só constrói, não publica |
+| **Deploy** | entra na EC2 por SSH, roda [`deploy/deploy.sh`](deploy/deploy.sh) com a tag do commit e confere `GET /api/health/` | push na `main` (ou manual), com `EC2_HOST` configurado |
 
-O CI usa SQLite e não precisa de `.env`.
+Cada job só roda se o anterior passou. O CI usa SQLite e não precisa de `.env`.
+Para configurar o deploy (secrets, variáveis e rollback), veja [`deploy/README.md`](deploy/README.md), seção 9.
+
+Para rodar o lint localmente antes do push:
+
+```bash
+pip install ruff==0.17.3
+ruff check .          # ruff check --fix . corrige a ordem dos imports e afins
+```
 
 ---
 
@@ -1419,16 +1478,16 @@ Algumas evoluções que podem ser incorporadas futuramente:
 * [ ] Controle de permissões por perfil;
 * [ ] Histórico de alterações;
 * [ ] Logs de auditoria;
-* [ ] Rastreamento em tempo real;
-* [ ] Integração com mapas;
+* [x] Rastreamento em tempo real;
+* [x] Integração com mapas;
 * [ ] WebSockets;
 * [ ] Redis;
 * [ ] Celery para tarefas assíncronas;
-* [ ] Docker;
-* [ ] CI/CD com GitHub Actions;
+* [x] Docker;
+* [x] CI/CD com GitHub Actions;
 * [ ] Testes de integração;
 * [ ] Cobertura de testes;
-* [ ] Deploy em ambiente cloud.
+* [x] Deploy em ambiente cloud.
 
 ---
 
