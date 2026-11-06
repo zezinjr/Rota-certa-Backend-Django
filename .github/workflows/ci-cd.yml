@@ -1,7 +1,7 @@
 # CI/CD do backend: lint → testes → build da imagem → push no GHCR → deploy na EC2.
 #
 # - Pull request: lint, testes e build da imagem (sem publicar nem fazer deploy).
-# - Push na main: tudo, e o deploy roda o deploy/deploy.sh na EC2 por SSH.
+# - Push na main: lint, testes e imagem. O deploy na EC2 está DESATIVADO (ver o job deploy).
 # - Actions → CI/CD → Run workflow: o mesmo da main, com a opção de pular o deploy.
 #
 # Configuração (Settings → Secrets and variables → Actions), ver deploy/README.md, seção 6:
@@ -20,7 +20,7 @@ on:
       deploy:
         description: Fazer o deploy na EC2 depois de publicar a imagem
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -145,8 +145,13 @@ jobs:
   deploy:
     name: Deploy na EC2
     needs: build
+    # Desativado: a produção (EC2) é publicada pelo repositório oficial
+    # RaybrendoT/rota-certa-backend-django. Este repositório publicava uma versão antiga
+    # no mesmo servidor. Para religar, crie a variável DEPLOY_ENABLED=true em
+    # Settings → Secrets and variables → Actions (não recomendado).
     if: >-
-      github.ref == 'refs/heads/main'
+      vars.DEPLOY_ENABLED == 'true'
+      && github.ref == 'refs/heads/main'
       && github.event_name != 'pull_request'
       && vars.EC2_HOST != ''
       && (github.event_name == 'push' || inputs.deploy)
